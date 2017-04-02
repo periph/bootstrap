@@ -21,6 +21,15 @@ import zipfile
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 
+# TODO(maruel): Figure the name automatically.
+# This is where https://downloads.raspberrypi.org/raspbian_lite_latest redirects
+# to.
+RASPBIAN_JESSIE_LITE_URL = (
+    'https://downloads.raspberrypi.org/raspbian_lite/images/'
+    'raspbian_lite-2017-03-03/2017-03-02-raspbian-jessie-lite.zip')
+RASPBIAN_JESSIE_LITE_IMG = '2017-03-02-raspbian-jessie-lite.img'
+
+
 WPA_SUPPLICANT = """
 network={
   ssid="%s"
@@ -106,18 +115,16 @@ def umount(p):
 def fetch_img(args):
   """Fetches the distro image remotely."""
   if args.distro == 'raspbian':
-    # TODO(maruel): Figure the name automatically.
-    imgname = '2017-01-11-raspbian-jessie-lite.img'
+    imgname = RASPBIAN_JESSIE_LITE_IMG
     if not os.path.isfile(imgname):
+      zipname = 'raspbian_lite.zip'
       print('- Fetching Raspbian Jessie Lite latest')
-      check_call(
-          'curl', '-L', '-o', 'raspbian_lite_latest.zip',
-          'https://downloads.raspberrypi.org/raspbian_lite_latest')
+      check_call('curl', '-L', '-o', zipname, RASPBIAN_JESSIE_LITE_URL)
       # Warning: look for the actual file, put it in a subdirectory.
       print('- Extracting zip')
-      with zipfile.ZipFile('raspbian_lite_latest.zip') as f:
-        f.extractall()
-      os.remove('raspbian_lite_latest.zip')
+      with zipfile.ZipFile(zipname) as f:
+        f.extract(imgname)
+      os.remove(zipname)
     return imgname
   # http://odroid.in/ubuntu_16.04lts/
   # https://www.armbian.com/download/
@@ -250,6 +257,8 @@ def find_public_key():
 
 
 def main():
+  # Make it usable without root with:
+  # sudo setcap CAP_SYS_ADMIN,CAP_DAC_OVERRIDE=ep __file__
   os.chdir(BASE)
   parser = argparse.ArgumentParser(description=sys.modules[__name__].__doc__)
   parser.add_argument('--as-root', action='store_true', help=argparse.SUPPRESS)
@@ -262,7 +271,7 @@ def main():
       help='Select the distribution to install',
       required=True)
   parser.add_argument(
-      '--wifi', nargs=2, help='wifi ssid and password')
+      '--wifi', metavar=('SSID', 'PWD'), nargs=2, help='wifi ssid and password')
   parser.add_argument(
       '--5inch', action='store_true', dest='five_inches',
       help='Enable support for 5" 800x480 display (raspbian only)')
