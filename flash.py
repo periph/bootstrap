@@ -229,11 +229,14 @@ def as_root(args):
 
   setup_first_boot(args, root, boot)
   if args.five_inches:
+    # TODO(maruel): Only for Raspbian.
     enable_5inches(args, root, boot)
   if args.ssh_key:
     setup_ssh(args, root, boot)
   if args.wifi:
     setup_wifi(args, root, boot)
+  # https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
+  # enable_uart=1 for RPi?
 
   print('- Unmounting')
   check_call('sync')

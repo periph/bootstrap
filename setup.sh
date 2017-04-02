@@ -152,6 +152,11 @@ EOF
 fi
 
 
+# Assumes there is only one account. This is true for most distros. The value is
+# generally one of: pi, debian, odroid, chip.
+USERNAME="$(ls /home)"
+
+
 # Obviously don't use that on your own device; that's my keys. :)
 # Uncomment and put your keys if desired. flash.py already handles this.
 # KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJKLhs80AouVRKus3NySEpRDwljUDC0V9dyNwhBuo4p6 maruel'
