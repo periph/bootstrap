@@ -4,7 +4,8 @@
 # LICENSE file.
 
 # Run as:
-#   curl -sSL https://raw.githubusercontent.com/maruel/bin_pub/master/devices/setup.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/setup.sh | bash
+#   curl -sSL https://goo.gl/JcTSsH | bash
 #
 # - Beaglebone:
 #   - User/pwd: debian/temppwd
@@ -185,7 +186,7 @@ fi
 # Install the Go toolchain.
 # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
 # TODO(maruel): Magically figure out latest version.
-GO_VERSION=1.8
+GO_VERSION=1.8.1
 # TODO(maruel): Detect if x86.
 # TODO(maruel): Drop /root/update_golang.sh to make upgrading easier?
 GO_ARCH=armv6l

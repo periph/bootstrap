@@ -11,7 +11,22 @@ These were written to help manage the [gohci](https://github.com/periph/gohci)
 workers, so they can be reflashed easily in case of tampering but the script are
 intentionally generic and reusable.
 
-This is a work in progress.
+## Flashing a new device
+
+This downloads the Raspbian Jessie Lite image and flashes it to an SD Card.  You
+must supply the path to the SD card, generally in the form of `/dev/sdX` or
+`/dev/mmcblkN`. This only works on linux for now.
+
+```
+./flash.py -distro raspbian --wifi <ssid> <pwd> /dev/sdh
+```
+
+## Setuping a device
+
+If you already have a running device and want to run setup on it, use:
+```
+curl -sSL https://goo.gl/JcTSsH | bash
+```
 
 
 ## Modifications
