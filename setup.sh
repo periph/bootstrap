@@ -229,10 +229,11 @@ echo "- New hostname is: $HOST"
 if [ $BOARD = raspberrypi ]; then
   sudo raspi-config nonint do_hostname $HOST
 else
+  #OLD="$(hostname)"
+  #sudo sed -i "s/\$OLD/\$HOST/" /etc/hostname
+  #sudo sed -i "s/\$OLD/\$HOST/" /etc/hosts
   # It hangs on the CHIP (?)
-  sudo sed -i "s/$OLD/$HOST/" /etc/hostname
-  sudo sed -i "s/$OLD/$HOST/" /etc/hosts
-  #sudo hostnamectl set-hostname $HOST
+  sudo hostnamectl set-hostname $HOST
 fi
 
 
