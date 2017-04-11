@@ -9,6 +9,23 @@
 
 set -eu
 
+# Automatic detection.
+# TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
+# step in the right direction.
+DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
+BOARD=unknown
+if [ -f /etc/dogtag ]; then
+  BOARD=beaglebone
+fi
+if [ -f /etc/chip_build_info.txt ]; then
+  BOARD=chip
+fi
+# TODO(maruel): detect odroid.
+if [ $DIST = raspbian ]; then
+  BOARD=raspberrypi
+fi
+echo "Detected board: $BOARD"
+
 
 # Generate a hostname based on the serial number of the CPU with leading zeros
 # trimmed off, it is a constant yet unique value.
