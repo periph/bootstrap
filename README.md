@@ -5,11 +5,17 @@ tools to help with that specifically:
 
 - `flash.py`: Downloads an image, flashes it to an SD card and modifies it to
   run `setup.sh` upon the first boot.
-- `setup.sh`: script to run on an already flashed device.
+- `setup.sh`: script to run on an already flashed device. Subset of its
+  functionality is extracted:
+  - `rename_host.sh` to rename the host leveraging the serial number of the
+    device.
+  - `install_go.sh` to install the Go toolchain.
 
 These were written to help manage the [gohci](https://github.com/periph/gohci)
 workers, so they can be reflashed easily in case of tampering but the script are
 intentionally generic and reusable.
+
+
 
 ## Flashing a new device
 

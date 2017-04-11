@@ -188,7 +188,6 @@ fi
 # TODO(maruel): Magically figure out latest version.
 GO_VERSION=1.8.1
 # TODO(maruel): Detect if x86.
-# TODO(maruel): Drop /root/update_golang.sh to make upgrading easier?
 GO_ARCH=armv6l
 GO_OS_NAME=linux
 FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
