@@ -104,7 +104,22 @@ fi
 
 
 if [ $BOARD = chip ]; then
-  echo "TODO: C.H.I.P."
+  echo "Enabling SPI"
+  cat > /etc/systemd/system/enable_spi.service << EOF
+[Unit]
+Description=Enable SPI
+After=auditd.service
+
+[Service]
+Type=oneshot
+Restart=no
+ExecStart=/bin/sh -c 'mkdir -p /sys/kernel/config/device-tree/overlays/spi && cp /lib/firmware/nextthingco/chip/sample-spi.dtbo /sys/kernel/config/device-tree/overlays/spi/dtbo'
+
+[Install]
+WantedBy=default.target
+EOF
+  sudo systemctl daemon-reload
+  sudo systemctl enable enable_spi
 fi
 
 
