@@ -34,6 +34,24 @@ If you already have a running device and want to run setup on it, use:
 curl -sSL https://goo.gl/JcTSsH | bash
 ```
 
+or a subset:
+
+### Installing Go
+
+```
+curl -sSL https://goo.gl/TFmVMG | bash
+```
+
+### Renaming host
+
+This renames the host to `<board>-<id>` where `<board>` is one of `beaglebone`,
+`chip`, `odroid` or `raspberrypi` and `<id>` is calculated from either the CPU
+serial number or systemd's hostctl 'Machine ID'.
+
+```
+curl -sSL https://goo.gl/EkANh0 | bash
+```
+
 
 ## Modifications
 
