@@ -10,16 +10,23 @@
 set -eu
 
 
-# Install the Go toolchain.
-# TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
-# TODO(maruel): Magically figure out latest version.
-GO_VERSION=1.8.3
+echo "Installing the Go toolchain"
+
+echo "- Magically figuring out latest version"
 # TODO(maruel): Detect if x86.
 GO_ARCH=armv6l
 GO_OS_NAME=linux
-FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
-URL=https://storage.googleapis.com/golang/$FILENAME
-echo Fetching $URL
+URL=`curl -sS https://golang.org/dl/ | grep -Po "https://storage\.googleapis\.com/golang/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
+FILENAME=`echo ${URL} | cut -d / -f 5`
+
+# The non-guesswork version:
+#BASE_URL=https://storage.googleapis.com/golang/
+#GO_VERSION=1.8.3
+#FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
+#URL=${BASE_URL}/${FILENAME}
+
+echo "- Fetching $URL"
+echo "  as $FILENAME"
 wget $URL
 sudo tar -C /usr/local -xzf $FILENAME
 rm $FILENAME
@@ -29,3 +36,4 @@ echo 'export GOPATH="$HOME/go"' | sudo tee /etc/profile.d/golang.sh
 echo 'export PATH="$PATH:/usr/local/go/bin:$GOPATH/bin"' | sudo tee --append /etc/profile.d/golang.sh
 sudo chmod 0555 /etc/profile.d/golang.sh
 # TODO(maruel): Optionally go get a few tools?
+echo "- Done"

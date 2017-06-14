@@ -25,6 +25,10 @@
 #   - User/pwd: pi/raspberry
 #   - Flash with ./flash_rasbian.sh
 
+echo "Waiting for network to be up and running"
+until ping -c1 www.google.com &>/dev/null; do :; done
+echo "Network is UP"
+
 set -eu
 
 # Try to work around:
@@ -199,23 +203,7 @@ fi
 
 # Install the Go toolchain.
 # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
-# TODO(maruel): Magically figure out latest version.
-GO_VERSION=1.8.1
-# TODO(maruel): Detect if x86.
-GO_ARCH=armv6l
-GO_OS_NAME=linux
-FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
-URL=https://storage.googleapis.com/golang/$FILENAME
-echo Fetching $URL
-wget $URL
-sudo tar -C /usr/local -xzf $FILENAME
-rm $FILENAME
-
-# We need to set GOPATH and PATH.
-echo 'export GOPATH="$HOME/go"' | sudo tee /etc/profile.d/golang.sh
-echo 'export PATH="$PATH:/usr/local/go/bin:$GOPATH/bin"' | sudo tee --append /etc/profile.d/golang.sh
-sudo chmod 0555 /etc/profile.d/golang.sh
-# TODO(maruel): Optionally go get a few tools?
+curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/install_go.sh | bash
 
 
 # Generate a hostname based on the serial number of the CPU with leading zeros
