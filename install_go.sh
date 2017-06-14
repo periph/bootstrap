@@ -13,7 +13,7 @@ set -eu
 # Install the Go toolchain.
 # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
 # TODO(maruel): Magically figure out latest version.
-GO_VERSION=1.8.1
+GO_VERSION=1.8.3
 # TODO(maruel): Detect if x86.
 GO_ARCH=armv6l
 GO_OS_NAME=linux

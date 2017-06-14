@@ -9,25 +9,18 @@ automatically.
 
 import argparse
 import glob
+import logging
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+import urllib
 import zipfile
 
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-
-
-# TODO(maruel): Figure the name automatically.
-# This is where https://downloads.raspberrypi.org/raspbian_lite_latest redirects
-# to.
-RASPBIAN_JESSIE_LITE_URL = (
-    'https://downloads.raspberrypi.org/raspbian_lite/images/'
-    'raspbian_lite-2017-03-03/2017-03-02-raspbian-jessie-lite.zip')
-RASPBIAN_JESSIE_LITE_IMG = '2017-03-02-raspbian-jessie-lite.img'
 
 
 WPA_SUPPLICANT = """
@@ -112,14 +105,44 @@ def umount(p):
   return ret
 
 
+##
+
+
+def raspbian_get_latest_image_url():
+  """Reads the image listing to find the latest one."""
+  # This is where https://downloads.raspberrypi.org/raspbian_lite_latest redirects
+  # to.
+  base_img_url = 'https://downloads.raspberrypi.org/raspbian_lite/images/'
+  # Use a recent (as of now) default date, it's not a big deal if the image is a
+  # bit stale, it'll just take more time to apt upgrade.
+  date = '2017-04-10'
+  img_fmt = 'raspbian_lite-%s/%s-raspbian-jessie-lite.zip'
+  file_fmt = '%s-raspbian-jessie-lite.img'
+  try:
+    html = urllib.urlopen(base_img_url).read()
+    # This will be good until 2099.
+    matches = re.findall(r'raspbian_lite-(20\d\d-\d\d-\d\d)/', html)
+    # It's already in sorted order.
+    date = matches[-1]
+  except IOError:
+    logging.warning(
+        'Failed to determine latest Raspbian Jessie Lite image, defaulting to '
+        '%s',
+        date)
+  url = base_img_url + img_fmt % (date, date)
+  f = file_fmt % date
+  logging.info('raspbian_get_latest_image_url() = %s, %s', url, f)
+  return url, f
+
+
 def fetch_img(args):
   """Fetches the distro image remotely."""
   if args.distro == 'raspbian':
-    imgname = RASPBIAN_JESSIE_LITE_IMG
+    imgurl, imgname = raspbian_get_latest_image_url()
     if not os.path.isfile(imgname):
       zipname = 'raspbian_lite.zip'
       print('- Fetching Raspbian Jessie Lite latest')
-      check_call('curl', '-L', '-o', zipname, RASPBIAN_JESSIE_LITE_URL)
+      check_call('curl', '-L', '-o', zipname, imgurl)
       # Warning: look for the actual file, put it in a subdirectory.
       print('- Extracting zip')
       with zipfile.ZipFile(zipname) as f:
@@ -284,8 +307,11 @@ def main():
   parser.add_argument(
       'path',
       help='Path to SD card, generally in the form of /dev/sdX or /dev/mmcblkN')
+  parser.add_argument(
+      '-v', '--verbose', action='store_true', help='Log vebosely')
   args = parser.parse_args()
 
+  logging.basicConfig(level=logging.DEBUG if args.verbose else logging.ERROR)
   if args.distro == 'raspbian':
     args.user = 'pi'
   elif args.distro == 'chip':
