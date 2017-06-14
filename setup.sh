@@ -252,3 +252,5 @@ fi
 
 echo "- Changing MOTD"
 echo "Welcome to $HOST" | sudo tee /etc/motd
+# Reboot so the device starts advertizing itself with the new host name.
+sudo shutdown -r now
