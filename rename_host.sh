@@ -6,23 +6,29 @@
 # Run as:
 #   curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/rename_host.sh | bash
 #   curl -sSL https://goo.gl/EkANh0 | bash
+#
+# Exports:
+#   BOARD:  detected board
+#   DIST:   detected distribution
+#   HOST:   final hostname used
+#   SERIAL: shortened serial number used for the hostname
 
 set -eu
 
 # Automatic detection.
 # TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
 # step in the right direction.
-DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
-BOARD=unknown
+export DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
+export BOARD=unknown
 if [ -f /etc/dogtag ]; then
-  BOARD=beaglebone
+  export BOARD=beaglebone
 fi
 if [ -f /etc/chip_build_info.txt ]; then
-  BOARD=chip
+  export BOARD=chip
 fi
 # TODO(maruel): detect odroid.
 if [ $DIST = raspbian ]; then
-  BOARD=raspberrypi
+  export BOARD=raspberrypi
 fi
 echo "Detected board: $BOARD"
 
@@ -30,13 +36,13 @@ echo "Detected board: $BOARD"
 # Generate a hostname based on the serial number of the CPU with leading zeros
 # trimmed off, it is a constant yet unique value.
 # Get the CPU serial number, otherwise the systemd machine ID.
-SERIAL="$(cat /proc/cpuinfo | grep Serial | cut -d ':' -f 2 | sed 's/^[ 0]\+//')"
+export SERIAL="$(cat /proc/cpuinfo | grep Serial | cut -d ':' -f 2 | sed 's/^[ 0]\+//')"
 if [ "$SERIAL" = "" ]; then
-  SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
+  export SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
 fi
 # On ODROID, Serial is 1b00000000000000.
 if [ "$SERIAL" = "1b00000000000000" ]; then
-  SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
+  export SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
 fi
 
 # Cut to keep the last 4 characters. Otherwise this quickly becomes unwieldy.
@@ -44,9 +50,9 @@ fi
 # devices at once. 4 characters of hex encoded digits gives 65535 combinations.
 # Taking in account there will be at most 255 devices on the network subnet, it
 # should be "good enough". Increase to 5 if needed.
-SERIAL="$(echo $SERIAL | sed 's/.*\(....\)/\1/')"
+export SERIAL="$(echo $SERIAL | sed 's/.*\(....\)/\1/')"
 
-HOST="$BOARD-$SERIAL"
+export HOST="$BOARD-$SERIAL"
 echo "- New hostname is: $HOST"
 if [ $BOARD = raspberrypi ]; then
   sudo raspi-config nonint do_hostname $HOST

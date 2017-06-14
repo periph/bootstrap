@@ -5,6 +5,7 @@
 
 # Run as:
 #   curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/enable_sendmail.sh | bash
+#   curl -sSL https://goo.gl/YlYV3R | bash
 
 set -eu
 
