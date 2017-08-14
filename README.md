@@ -1,16 +1,17 @@
 # Tools to bootstrap micro computers
 
-Bootstrapping a micro computer can be tedious. This repository contains tools to
-help with that specifically to automate the deployment as much as possible.
+Bootstrapping a micro computer can be tedious. This repository contains Go tools
+to help with that specifically to automate the deployment as much as possible.
 
 
 ## Local
 
-Tools meant to be run on your machine are written in python for portability:
+Tools meant to be run on your machine are written in [Go](https://golang.org/)
+for portability:
 
-- `flash.py`: Downloads an image, flashes it to an SD card and modifies it to
+- `cmd/flash`: Downloads an image, flashes it to an SD card and modifies it to
   run `setup.sh` upon the first boot.
-- `find.py`: Looks for devices on the local network through mDNS.
+- `cmd/find`: Looks for devices on the local network through mDNS.
 
 
 ### Flashing the micro computer
@@ -20,10 +21,11 @@ Card. You must supply the path to the SD card, generally in the form of
 `/dev/sdX` or `/dev/mmcblkN`. This only works on linux for now.
 
 ```
-./flash.py --distro raspbian --wifi <ssid> <pwd> /dev/sdh
+go install periph.io/x/bootstrap/cmd/...
+flash --distro raspbian --wifi <ssid> <pwd> /dev/sdh
 ```
 
-`flash.py` takes care of all the steps below on the micro computer initial boot.
+`flash` takes care of all the steps below on the micro computer initial boot.
 
 
 ## On the micro computer
