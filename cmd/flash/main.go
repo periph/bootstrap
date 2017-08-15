@@ -25,7 +25,54 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+
+	"github.com/ulikunitz/xz"
 )
+
+type Distro string
+
+func (d *Distro) String() string {
+	return string(*d)
+}
+
+func (d *Distro) Set(s string) error {
+	if _, ok := userMap[Distro(s)]; !ok {
+		return fmt.Errorf("unsupported distro")
+	}
+	*d = Distro(s)
+	return nil
+}
+
+const (
+	// https://docs.getchip.com/chip.html
+	chip Distro = "chip"
+	// If you find yourself the need to debug over serial, see
+	// http://odroid.com/dokuwiki/doku.php?id=en:usb_uart_kit for how to connect.
+	odroidC1 Distro = "odroid-c1"
+	// https://www.raspberrypi.org/documentation/linux/
+	raspbian Distro = "raspbian"
+)
+
+// userMap is the default user as 1000:1000 on the distro.
+var userMap = map[Distro]string{
+	// https://docs.getchip.com/chip.html
+	chip: "chip",
+	// Ubuntu minimal doesn't come with a user, it is created on first boot.
+	// Using 'odroid' to be compatible with the Ubuntu full image.
+	// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1/
+	odroidC1: "odroid",
+	// https://www.raspberrypi.org/documentation/linux/usage/users.md
+	raspbian: "pi",
+}
+
+// hostMap is the default hostname on the distro. rename_host.sh will add
+// "-XXXX" suffix based on the device's serial number.
+var hostMap = map[Distro]string{
+	chip:     "chip",
+	odroidC1: "odroid",
+	raspbian: "raspberrypi",
+}
 
 const wpaSupplicant = `
 network={
@@ -46,14 +93,10 @@ hdmi_cvt 800 480 60 6 0 0 0
 #dtoverlay=ads7846,penirq=22,penirq_pull=2,speed=10000,xohms=150
 `
 
-const rcLocalContent = `#!/bin/sh
-# Copyright 2016 Marc-Antoine Ruel. All rights reserved.
-# Use of this source code is governed under the Apache License, Version 2.0
-# that can be found in the LICENSE file.
+const rcLocalContent = `
 
-# Part of https://github.com/maruel/bin_pub
-
-set -e
+# The following was added by cmd/flash from
+# https://github.com/periph/bootstrap
 
 LOG_FILE=/var/log/firstboot.log
 if [ ! -f $LOG_FILE ]; then
@@ -63,8 +106,8 @@ exit 0
 `
 
 var (
+	distro     Distro
 	sshKey     = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
-	distro     = flag.String("distro", "", "Select the distribution to install")
 	wifiSSID   = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass   = flag.String("wifi-pass", "", "wifi password")
 	fiveInches = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (raspbian only)")
@@ -74,10 +117,17 @@ var (
 	// Internal flags.
 	asRoot = flag.Bool("as-root", false, "")
 	img    = flag.String("img", "", "")
-
-	// Set in main based on *distro.
-	defaultUser = ""
 )
+
+func init() {
+	var names []string
+	for k := range userMap {
+		names = append(names, string(k))
+	}
+	sort.Strings(names)
+	h := fmt.Sprintf("Select the distribution to install: %s", strings.Join(names, ", "))
+	flag.Var(&distro, "distro", h)
+}
 
 // Utils
 
@@ -111,6 +161,15 @@ func copyFile(dst, src string, mode os.FileMode) error {
 		return err
 	}
 	return fd.Close()
+}
+
+func chownRecursive(path string, uid, gid int) error {
+	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
+		if err == nil {
+			err = os.Chown(name, uid, gid)
+		}
+		return err
+	})
 }
 
 // Image fetching
@@ -150,8 +209,44 @@ func raspbianGetLatestImageURL() (string, string) {
 
 // fetchImg fetches the distro image remotely.
 func fetchImg() (string, error) {
-	switch *distro {
-	case "raspbian":
+	switch distro {
+	case odroidC1:
+		// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1
+		// http://odroid.in/ubuntu_16.04lts/
+		mirror := "https://odroid.in/ubuntu_16.04lts/"
+		// http://east.us.odroid.in/ubuntu_16.04lts
+		// http://de.eu.odroid.in/ubuntu_16.04lts
+		// http://dn.odroid.com/S805/Ubuntu
+		imgname := "ubuntu-16.04.2-minimal-odroid-c1-20170221.img"
+		if f, _ := os.Open(imgname); f != nil {
+			fmt.Printf("- Reusing Ubuntu minimal image %s\n", imgname)
+			f.Close()
+			return imgname, nil
+		}
+		fmt.Printf("- Fetching %s\n", imgname)
+		resp, err := http.DefaultClient.Get(mirror + imgname + ".xz")
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		r, err := xz.NewReader(resp.Body)
+		if err != nil {
+			return "", err
+		}
+		f, err := os.Create(imgname)
+		if err != nil {
+			return "", err
+		}
+		// Decompress as the file is being downloaded.
+		if _, err = io.Copy(f, r); err != nil {
+			f.Close()
+			return "", err
+		}
+		if err := f.Close(); err != nil {
+			return "", err
+		}
+		return imgname, nil
+	case raspbian:
 		imgurl, imgname := raspbianGetLatestImageURL()
 		if f, _ := os.Open(imgname); f != nil {
 			fmt.Printf("- Reusing Raspbian Jessie Lite image %s\n", imgname)
@@ -171,6 +266,8 @@ func fetchImg() (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// Because zip header is at the end of the file, extraction can only begin
+		// once the file is fully downloaded.
 		fmt.Printf("- Extracting zip\n")
 		r, err := zip.NewReader(bytes.NewReader(z), int64(len(z)))
 		if err != nil {
@@ -197,20 +294,12 @@ func fetchImg() (string, error) {
 			}
 		}
 		return "", errors.New("failed to find image in zip")
-	case "odroid-c1":
-		/*
-			// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1
-			// http://odroid.in/ubuntu_16.04lts/
-			mirror := "https://odroid.in/ubuntu_16.04lts/"
-			filename := "ubuntu-16.04.2-minimal-odroid-c1-20170221.img.xz"
-		*/
-		return "", fmt.Errorf("don't know how to fetch distro %s", *distro)
 	default:
 		// - https://www.armbian.com/download/
 		// - https://beagleboard.org/latest-images better to flash then run setup.sh
 		//   manually.
 		// - https://flash.getchip.com/ better to flash then run setup.sh manually.
-		return "", fmt.Errorf("don't know how to fetch distro %s", *distro)
+		return "", fmt.Errorf("don't know how to fetch distro %s", distro)
 	}
 }
 
@@ -269,8 +358,8 @@ func umount(p string) error {
 // Found one at 23$USD with free shipping on aliexpress.
 func enable5inches(root, boot string) error {
 	fmt.Printf("- Enabling 5\" display support\n")
-	switch *distro {
-	case "raspbian":
+	switch distro {
+	case raspbian:
 		f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND, 0666)
 		if err != nil {
 			return err
@@ -280,7 +369,7 @@ func enable5inches(root, boot string) error {
 		}
 		return f.Close()
 	default:
-		return fmt.Errorf("don't know how to enable 5\" display support on distro %s", *distro)
+		return fmt.Errorf("don't know how to enable 5\" display support on distro %s", distro)
 	}
 }
 
@@ -289,40 +378,56 @@ func setupFirstBoot(root, boot string) error {
 	if err := copyFile(filepath.Join(root, "root", "firstboot.sh"), "setup.sh", 0755); err != nil {
 		return err
 	}
-	// Skip this step to debug firstboot.sh. Then login at the console and run the
-	// script manually.
+	// Note: To debug firstboot,sh, comment out the following lines, then login
+	// at the console and run the script manually.
 	rcLocal := filepath.Join(root, "etc", "rc.local")
-	if err := os.Rename(rcLocal, rcLocal+"old"); err != nil {
+	b, err := ioutil.ReadFile(rcLocal)
+	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(rcLocal, []byte(rcLocalContent), 0755)
+	// Keep the content of the file, trim the "exit 0" at the end. It is
+	// important to keep its content since some distros (odroid) use it to resize
+	// the partition on first boot.
+	content := strings.TrimRightFunc(string(b), unicode.IsSpace)
+	content = strings.TrimSuffix(content, "exit 0")
+	content += rcLocalContent
+	log.Printf("Writing %q:\n%s", rcLocal, content)
+	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
 }
 
 func setupSSH(root, boot string) error {
 	fmt.Printf("- SSH keys\n")
 	// This assumes you have properly set your own ssh keys and plan to use them.
-	d := filepath.Join(root, "home", defaultUser, ".ssh")
-	if _, err := os.Stat(d); os.IsNotExist(err) {
-		if err := os.MkdirAll(d, 0755); err != nil {
+	home := filepath.Join(root, "home", userMap[distro])
+	sshDir := filepath.Join(home, ".ssh")
+	if _, err := os.Stat(sshDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(sshDir, 0755); err != nil {
 			return err
 		}
 	} else if err != nil {
 		return err
 	}
-
-	if err := copyFile(filepath.Join(d, "authorized_keys"), *sshKey, 0644); err != nil {
+	if err := copyFile(filepath.Join(sshDir, "authorized_keys"), *sshKey, 0644); err != nil {
 		return err
 	}
+	// It is possible the user account does not exist at all as some distros
+	// (armbian, odroid's ubuntu minimal) do not include a default user.
+	// Inconditionally update the ownership.
 	// On all (?) distros, the first user is 1000. This is at least true on
 	// Raspbian and NextThing's Debian distro.
-	if err := os.Chown(d, 1000, 1000); err != nil {
-		return err
-	}
-	if err := os.Chown(filepath.Join(d, "authorized_keys"), 1000, 1000); err != nil {
+	if err := chownRecursive(home, 1000, 1000); err != nil {
 		return err
 	}
 
 	// Force key based authentication since the password is known.
+	// This could be done in setup.sh but doing so would mean that the device
+	// would have a window where it would be vulnerable to ssh with default
+	// credentials. Doing it here means that even the bootstrapping phase is
+	// secure.
+	//
+	// This is annoying for distros without a default user account, which is
+	// created a bit later in setup.sh. In this case it is impossible to ssh in
+	// until the account is created, as ssh as root is disabled.
 	p := filepath.Join(root, "etc", "ssh", "sshd_config")
 	content, err := ioutil.ReadFile(p)
 	if err != nil {
@@ -340,7 +445,7 @@ func setupSSH(root, boot string) error {
 	}
 
 	// https://www.raspberrypi.org/documentation/remote-access/ssh/
-	if *distro == "raspbian" {
+	if distro == raspbian {
 		f, err := os.Create(filepath.Join(boot, "ssh"))
 		if err != nil {
 			return err
@@ -475,12 +580,14 @@ func mainAsRoot() error {
 	default:
 		return errors.New("flash() is not implemented on this OS")
 	}
-	fmt.Printf("\nYou can now remove the SDCard safely and boot your Raspberry Pi\n")
-	fmt.Printf("Then connect with:\n")
-	fmt.Printf("  ssh -o StrictHostKeyChecking=no pi@raspberrypi\n\n")
-	fmt.Printf("You can follow the update process by either connecting a monitor\n")
-	fmt.Printf("to the HDMI port or by ssh'ing into the device and running:\n")
-	fmt.Printf("  tail -f /var/log/firstboot.log\n")
+	fmt.Printf("\nYou can now remove the SDCard safely and boot your Micro computer\n")
+	fmt.Printf("Connect with:\n")
+	fmt.Printf("  ssh -o StrictHostKeyChecking=no %s@%s\n\n", userMap[distro], hostMap[distro])
+	fmt.Printf("You can follow the update process by either:\n")
+	fmt.Printf("- connecting a monitor\n")
+	fmt.Printf("- connecting to the serial port\n")
+	fmt.Printf("- ssh'ing into the device and running:\n")
+	fmt.Printf("    tail -f /var/log/firstboot.log\n")
 	return nil
 }
 
@@ -525,7 +632,7 @@ func mainAsUser() error {
 	if err != nil {
 		return err
 	}
-	cmd := []string{execname, "-as-root", "-distro", *distro, "-ssh-key", *sshKey, "-img", imgname}
+	cmd := []string{execname, "-as-root", "-distro", string(distro), "-ssh-key", *sshKey, "-img", imgname}
 	// Propagate optional flags.
 	if *wifiSSID != "" {
 		cmd = append(cmd, "--wifi-ssid", *wifiSSID)
@@ -556,13 +663,8 @@ func mainImpl() error {
 	if !*v {
 		log.SetOutput(ioutil.Discard)
 	}
-	switch *distro {
-	case "chip":
-		defaultUser = "chip"
-	case "raspbian":
-		defaultUser = "pi"
-	default:
-		return errors.New("unsupported distro")
+	if len(*sdCard) == 0 {
+		return errors.New("-sdcard is required")
 	}
 	if *asRoot {
 		return mainAsRoot()

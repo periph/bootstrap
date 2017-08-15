@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Copyright 2016 Marc-Antoine Ruel. All Rights Reserved. Use of this
 # source code is governed by a BSD-style license that can be found in the
 # LICENSE file.
@@ -45,7 +45,10 @@ sudo apt-get upgrade -y
 # ssh:     130kB
 # tmux:    670kB
 # vim:      28MB (!)
-sudo apt-get install -y git ifstat python ssh sysstat tmux vim
+#
+# curl is missing on odroid.
+# Optional: ifstat python sysstat
+sudo apt-get install -y curl git ssh tmux vim
 
 
 # Automatic detection.
@@ -59,7 +62,10 @@ fi
 if [ -f /etc/chip_build_info.txt ]; then
   BOARD=chip
 fi
-# TODO(maruel): detect odroid.
+if [ -f /etc/apt/sources.list.d/odroid.list ]; then
+  # Fetching from ODROID's primary repository.
+  BOARD=odroid
+fi
 if [ $DIST = raspbian ]; then
   BOARD=raspberrypi
 fi
@@ -128,7 +134,22 @@ fi
 
 
 if [ $BOARD = odroid ]; then
-  echo "TODO: O-DROID"
+  # By default there is not user account. Create one. The main problem is that
+  # it means that it is impossible to ssh in until the account is created.
+  sudo useradd odroid --password odroid -M --shell /bin/bash \
+    -G adm,cdrom,dialout,dip,fax,floppy,plugdev,sudo,tape,video
+  echo odroid:odroid | sudo chpasswd
+
+  # /etc/skel won't be copied automatically when the directory already existed,
+  # so forcibly do it now.
+  sudo cp /etc/skel/.[!.]* /home/odroid
+  sudo chown odroid:odroid /home/odroid/.[!.]*
+  # This file is created automatically and owned by root.
+  rm -rf /home/odroid/resize.log
+
+  # TODO(maruel): Installing avahi-daemon is not sufficient to have it expose
+  # _workstation._tcp over mDNS.
+  #    sudo apt install -y avahi-daemon
 fi
 
 
@@ -206,6 +227,8 @@ fi
 curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/install_go.sh | bash
 
 
+### rename_host.sh ###
+
 # Generate a hostname based on the serial number of the CPU with leading zeros
 # trimmed off, it is a constant yet unique value.
 # Get the CPU serial number, otherwise the systemd machine ID.
@@ -213,9 +236,10 @@ SERIAL="$(cat /proc/cpuinfo | grep Serial | cut -d ':' -f 2 | sed 's/^[ 0]\+//')
 if [ "$SERIAL" = "" ]; then
   SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
 fi
-# On ODROID, Serial is 1b00000000000000.
+# On ODROID-C1, Serial is 1b00000000000000 and /etc/machine-id is static. Use
+# the eMMC CID register. https://forum.odroid.com/viewtopic.php?f=80&t=3064
 if [ "$SERIAL" = "1b00000000000000" ]; then
-  SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
+  export SERIAL="$(cat /sys/block/mmcblk0/device/cid | cut -c 25- | cut -c -4)"
 fi
 
 # Cut to keep the last 4 characters. Otherwise this quickly becomes unwieldy.

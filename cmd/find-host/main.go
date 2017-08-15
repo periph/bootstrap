@@ -2,8 +2,9 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// find finds the Raspberry Pis/ODROID/C.H.I.P. on the network that broadcast via mDNS.
-package main // import "periph.io/x/bootstrap/cmd/find"
+// find-host finds the Raspberry Pis/ODROID/C.H.I.P. on the network that
+// broadcast via mDNS.
+package main // import "periph.io/x/bootstrap/cmd/find-host"
 
 import (
 	"fmt"
@@ -11,10 +12,6 @@ import (
 	"os/exec"
 	"strings"
 )
-
-/*
-def main():
-*/
 
 func mainImpl() error {
 	// Simplify our life on locale not in en_US.
@@ -43,7 +40,7 @@ func mainImpl() error {
 
 func main() {
 	if err := mainImpl(); err != nil {
-		fmt.Fprintf(os.Stderr, "\nfind: %s.\n", err)
+		fmt.Fprintf(os.Stderr, "\nfind-host: %s.\n", err)
 		os.Exit(1)
 	}
 }
