@@ -169,10 +169,11 @@ function setup_raspberrypi {
   sudo raspi-config nonint do_spi 0
   sudo raspi-config nonint do_i2c 0
   sudo raspi-config nonint do_ssh 0
+  sudo raspi-config nonint do_camera 0
   echo "raspi-config done"
 
   # TODO(maruel): This is a bit intense, most users will not want that.
-  cat > /etc/systemd/system/hdmi_disable.service << EOF
+  sudo tee /etc/systemd/system/hdmi_disable.service > /dev/null <<EOF
 [Unit]
 Description=Disable HDMI output to lower overall power consumption
 After=auditd.service
@@ -198,6 +199,11 @@ EOF
   sudo sed -i 's/en_GB/en_US/' /etc/locale.gen
   sudo dpkg-reconfigure --frontend=noninteractive locales
   sudo update-locale LANG=en_US.UTF-8
+
+  # TODO(maruel): On the Raspberry Pi Zero, enable Ethernet over USB. This is
+  # extremely useful! Need to detect the hardware and only do it when it makes
+  # sense.
+  #echo -e "\n# Enable ethernet over USB\ndtoverlay=dwc2\n" | sudo tee --append /boot/config.txt
 }
 
 
@@ -256,6 +262,7 @@ function install_go() {
 
 
 function setup_unattended_upgrade() {
+  echo "- Setup automatic upgrades"
   # Enable automatic reboot when necessary. We do not want unsafe devices! This
   # requires package unattended-upgrades.
   sudo tee /etc/apt/apt.conf.d/90periph > /dev/null <<EOF
@@ -264,6 +271,11 @@ Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "03:48";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 EOF
+  if [ ! -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
+    # The equivalent of: sudo dpkg-reconfigure unattended-upgrades
+    # odroid has it by default, but raspbian doesn't.
+    sudo cp /usr/share/unattended-upgrades/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades
+  fi
 }
 
 
