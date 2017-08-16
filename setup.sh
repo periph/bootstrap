@@ -31,49 +31,53 @@ echo "Network is UP"
 
 set -eu
 
-# Try to work around:
-#  WARNING: The following packages cannot be authenticated!
-sudo apt-key update
+function apt_update_install() {
+  # Try to work around:
+  #  WARNING: The following packages cannot be authenticated!
+  sudo apt-key update
 
-sudo apt-get update
-sudo apt-get upgrade -y
-# If you are space constrained, here's the approximative size:
-# git:                 17.7MB
-# ifstat:               3.3MB
-# python:                18MB
-# sysstat:              1.3MB
-# ssh:                  130kB
-# tmux:                 670kB
-# unattended-upgrades: 18.1MB (!)
-# vim:                   28MB (!)
-#
-# curl is missing on odroid.
-# Optional: ifstat python sysstat
-sudo apt-get install -y curl git ssh tmux unattended-upgrades vim
-
-
-# Automatic detection.
-# TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
-# step in the right direction.
-DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
-BOARD=unknown
-if [ -f /etc/dogtag ]; then
-  BOARD=beaglebone
-fi
-if [ -f /etc/chip_build_info.txt ]; then
-  BOARD=chip
-fi
-if [ -f /etc/apt/sources.list.d/odroid.list ]; then
-  # Fetching from ODROID's primary repository.
-  BOARD=odroid
-fi
-if [ $DIST = raspbian ]; then
-  BOARD=raspberrypi
-fi
-echo "Detected board: $BOARD"
+  sudo apt-get update
+  sudo apt-get upgrade -y
+  # If you are space constrained, here's the approximative size:
+  # git:                 17.7MB
+  # ifstat:               3.3MB
+  # python:                18MB
+  # sysstat:              1.3MB
+  # ssh:                  130kB
+  # tmux:                 670kB
+  # unattended-upgrades: 18.1MB (!)
+  # vim:                   28MB (!)
+  #
+  # curl is missing on odroid.
+  # Optional: ifstat python sysstat
+  sudo apt-get install -y curl git ssh tmux unattended-upgrades vim
+}
 
 
-if [ $BOARD = beaglebone ]; then
+function board_detect() {
+  # Automatic detection.
+  # TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
+  # step in the right direction.
+  DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
+  BOARD=unknown
+  if [ -f /etc/dogtag ]; then
+    BOARD=beaglebone
+  fi
+  if [ -f /etc/chip_build_info.txt ]; then
+    BOARD=chip
+  fi
+  if [ -f /etc/apt/sources.list.d/odroid.list ]; then
+    # Fetching from ODROID's primary repository.
+    BOARD=odroid
+  fi
+  if [ $DIST = raspbian ]; then
+    BOARD=raspberrypi
+  fi
+  echo "Detected board: $BOARD"
+}
+
+
+function setup_beaglebone() {
   # The Beaglebone comes with a lot of packages, which fills up the small 4Gb
   # eMMC quickly. Make some space as we won't be using these.
   # Use the following to hunt and kill:
@@ -110,11 +114,10 @@ if [ $BOARD = beaglebone ]; then
 # Change made by https://github.com/periph/bootstrap
 cape_enable=bone_capemgr.enable_partno=BB-SPIDEV0
 EOF
+}
 
-fi
 
-
-if [ $BOARD = chip ]; then
+function setup_chip() {
   echo "Enabling SPI"
   sudo tee /etc/systemd/system/enable_spi.service > /dev/null <<EOF
 [Unit]
@@ -131,10 +134,10 @@ WantedBy=default.target
 EOF
   sudo systemctl daemon-reload
   sudo systemctl enable enable_spi
-fi
+}
 
 
-if [ $BOARD = odroid ]; then
+function setup_odroid() {
   # By default there is not user account. Create one. The main problem is that
   # it means that it is impossible to ssh in until the account is created.
   sudo useradd odroid --password odroid -M --shell /bin/bash \
@@ -151,10 +154,14 @@ if [ $BOARD = odroid ]; then
   # TODO(maruel): Installing avahi-daemon is not sufficient to have it expose
   # _workstation._tcp over mDNS.
   #    sudo apt install -y avahi-daemon
-fi
+
+  # TODO(maruel): Do it in cmd/flash.
+  echo "Disabling root ssh support"
+  sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+}
 
 
-if [ $BOARD = raspberrypi ]; then
+function setup_raspberrypi {
   sudo apt -y remove triggerhappy
   sudo apt install -y ntpdate
   # https://github.com/RPi-Distro/raspi-config/blob/master/raspi-config
@@ -191,93 +198,148 @@ EOF
   sudo sed -i 's/en_GB/en_US/' /etc/locale.gen
   sudo dpkg-reconfigure --frontend=noninteractive locales
   sudo update-locale LANG=en_US.UTF-8
-fi
+}
 
 
-# Assumes there is only one account. This is true for most distros. The value is
-# generally one of: pi, debian, odroid, chip.
-USERNAME="$(ls /home)"
+function setup_ssh() {
+  # Assumes there is only one account. This is true for most distros. The value is
+  # generally one of: pi, debian, odroid, chip.
+  USERNAME="$(ls /home)"
+
+  # Uncomment and put your keys if desired. flash.py already handles this.
+  # KEYS='ssh-ed25519 add_here'
+  #if [ "${USER:=root}" != "root" ]; then
+  #  mkdir -p .ssh
+  #  echo "$KEYS" >>.ssh/authorized_keys
+  #else
+  #  mkdir -p /home/$USERNAME/.ssh
+  #  echo "$KEYS" >>/home/$USERNAME/.ssh/authorized_keys
+  #  chown -R $USERNAME:$USERNAME /home/$USERNAME/.ssh
+  #fi
+  if [ -f /home/$USERNAME/.ssh/authorized_keys ]; then
+    echo "Disabling ssh password authentication support"
+    sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+  fi
+}
 
 
-# Uncomment and put your keys if desired. flash.py already handles this.
-# KEYS='ssh-ed25519 add_here'
-#if [ "${USER:=root}" != "root" ]; then
-#  mkdir -p .ssh
-#  echo "$KEYS" >>.ssh/authorized_keys
-#else
-#  mkdir -p /home/$USERNAME/.ssh
-#  echo "$KEYS" >>/home/$USERNAME/.ssh/authorized_keys
-#  chown -R $USERNAME:$USERNAME /home/$USERNAME/.ssh
-#fi
+function install_go() {
+  ### install_go.sh ###
+
+  # Install the Go toolchain.
+  # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
+  echo "Installing the Go toolchain"
+  echo "- Magically figuring out latest version"
+  # TODO(maruel): Detect if x86.
+  GO_ARCH=armv6l
+  GO_OS_NAME=linux
+  URL=`curl -sS https://golang.org/dl/ | grep -Po "https://storage\.googleapis\.com/golang/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
+  FILENAME=`echo ${URL} | cut -d / -f 5`
+
+  # The non-guesswork version:
+  #BASE_URL=https://storage.googleapis.com/golang/
+  #GO_VERSION=1.8.3
+  #FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
+  #URL=${BASE_URL}/${FILENAME}
+  echo "- Fetching $URL"
+  echo "  as $FILENAME"
+  wget $URL
+  sudo tar -C /usr/local -xzf $FILENAME
+  rm $FILENAME
+  # We need to set GOPATH and PATH.
+  echo 'export GOPATH="$HOME/go"' | sudo tee /etc/profile.d/golang.sh
+  echo 'export PATH="$PATH:/usr/local/go/bin:$GOPATH/bin"' | sudo tee --append /etc/profile.d/golang.sh
+  sudo chmod 0555 /etc/profile.d/golang.sh
+  # TODO(maruel): Optionally go get a few tools?
+  echo "- Done"
+}
 
 
-if [ -f /home/$USERNAME/.ssh/authorized_keys ]; then
-  echo "Disabling ssh password authentication support"
-  sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-fi
-
-
-if [ $BOARD=odroid ]; then
-  echo "Disabling root ssh support"
-  sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-fi
-
-
-# Install the Go toolchain.
-# TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
-curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/install_go.sh | bash
-
-
-# Enable automatic reboot when necessary. We do not want unsafe devices! This
-# requires package unattended-upgrades.
-sudo tee /etc/apt/apt.conf.d/90periph > /dev/null <<EOF
+function setup_unattended_upgrade() {
+  # Enable automatic reboot when necessary. We do not want unsafe devices! This
+  # requires package unattended-upgrades.
+  sudo tee /etc/apt/apt.conf.d/90periph > /dev/null <<EOF
 # Generated by https://github.com/periph/bootstrap
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "03:48";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 EOF
+}
 
 
-### rename_host.sh ###
+function do_rename_host() {
+  ### rename_host.sh ###
 
-# Generate a hostname based on the serial number of the CPU with leading zeros
-# trimmed off, it is a constant yet unique value.
-# Get the CPU serial number, otherwise the systemd machine ID.
-SERIAL="$(cat /proc/cpuinfo | grep Serial | cut -d ':' -f 2 | sed 's/^[ 0]\+//')"
-if [ "$SERIAL" = "" ]; then
-  SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
-fi
-# On ODROID-C1, Serial is 1b00000000000000 and /etc/machine-id is static. Use
-# the eMMC CID register. https://forum.odroid.com/viewtopic.php?f=80&t=3064
-if [ "$SERIAL" = "1b00000000000000" ]; then
-  export SERIAL="$(cat /sys/block/mmcblk0/device/cid | cut -c 25- | cut -c -4)"
-fi
+  # Generate a hostname based on the serial number of the CPU with leading zeros
+  # trimmed off, it is a constant yet unique value.
+  # Get the CPU serial number, otherwise the systemd machine ID.
+  SERIAL="$(cat /proc/cpuinfo | grep Serial | cut -d ':' -f 2 | sed 's/^[ 0]\+//')"
+  if [ "$SERIAL" = "" ]; then
+    SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
+  fi
+  # On ODROID-C1, Serial is 1b00000000000000 and /etc/machine-id is static. Use
+  # the eMMC CID register. https://forum.odroid.com/viewtopic.php?f=80&t=3064
+  if [ "$SERIAL" = "1b00000000000000" ]; then
+    export SERIAL="$(cat /sys/block/mmcblk0/device/cid | cut -c 25- | cut -c -4)"
+  fi
 
-# Cut to keep the last 4 characters. Otherwise this quickly becomes unwieldy.
-# The first characters cannot be used because they matches when buying multiple
-# devices at once. 4 characters of hex encoded digits gives 65535 combinations.
-# Taking in account there will be at most 255 devices on the network subnet, it
-# should be "good enough". Increase to 5 if needed.
-SERIAL="$(echo $SERIAL | sed 's/.*\(....\)/\1/')"
+  # Cut to keep the last 4 characters. Otherwise this quickly becomes unwieldy.
+  # The first characters cannot be used because they matches when buying
+  # multiple devices at once. 4 characters of hex encoded digits gives 65535
+  # combinations.  Taking in account there will be at most 255 devices on the
+  # network subnet, it should be "good enough". Increase to 5 if needed.
+  SERIAL="$(echo $SERIAL | sed 's/.*\(....\)/\1/')"
 
-HOST="$BOARD-$SERIAL"
-echo "- New hostname is: $HOST"
-if [ $BOARD = raspberrypi ]; then
-  sudo raspi-config nonint do_hostname $HOST
-else
-  #OLD="$(hostname)"
-  #sudo sed -i "s/\$OLD/\$HOST/" /etc/hostname
-  #sudo sed -i "s/\$OLD/\$HOST/" /etc/hosts
-  # It hangs on the CHIP (?)
-  sudo hostnamectl set-hostname $HOST
-fi
+  HOST="$BOARD-$SERIAL"
+  echo "- New hostname is: $HOST"
+  if [ $BOARD = raspberrypi ]; then
+    sudo raspi-config nonint do_hostname $HOST
+  else
+    #OLD="$(hostname)"
+    #sudo sed -i "s/\$OLD/\$HOST/" /etc/hostname
+    #sudo sed -i "s/\$OLD/\$HOST/" /etc/hosts
+    # It hangs on the CHIP (?)
+    sudo hostnamectl set-hostname $HOST
+  fi
+}
 
 
-echo "- Changing MOTD"
-echo "Welcome to $HOST" | sudo tee /etc/motd
-if [ -f /etc/update-motd.d/10-help-text ]; then
-  # This is just noise.
-  sudo chmod -x /etc/update-motd.d/10-help-text
-fi
-# Reboot so the device starts advertizing itself with the new host name.
-sudo shutdown -r now
+function fix_motd() {
+  echo "- Changing MOTD"
+  echo "Welcome to $HOST" | sudo tee /etc/motd
+  if [ -f /etc/update-motd.d/10-help-text ]; then
+    # This is just noise.
+    sudo chmod -x /etc/update-motd.d/10-help-text
+  fi
+}
+
+
+function do_all() {
+  apt_update_install
+  board_detect
+  if [ $BOARD = beaglebone ]; then
+    setup_beaglebone
+  fi
+  if [ $BOARD = chip ]; then
+    setup_chip
+  fi
+  if [ $BOARD = odroid ]; then
+    setup_odroid
+  fi
+  if [ $BOARD = raspberrypi ]; then
+    setup_raspberrypi
+  fi
+  setup_ssh
+  install_go
+  setup_unattended_upgrade
+  do_rename_host
+  fix_motd
+  # Reboot so the device starts advertizing itself with the new host name.
+  sudo shutdown -r now
+}
+
+
+# TODO(maruel): Add support for flags to run optional steps or only run one,
+# like install_go
+# TODO(maruel): Add support for injecting a custom script before rebooting.
+do_all
