@@ -166,7 +166,9 @@ function setup_raspberrypi {
   sudo apt install -y ntpdate
   # https://github.com/RPi-Distro/raspi-config/blob/master/raspi-config
   # 0 means enabled.
+  # Enables SPI0.
   sudo raspi-config nonint do_spi 0
+  # Enables I2C1.
   sudo raspi-config nonint do_i2c 0
   sudo raspi-config nonint do_ssh 0
   sudo raspi-config nonint do_camera 0
@@ -200,10 +202,24 @@ EOF
   sudo dpkg-reconfigure --frontend=noninteractive locales
   sudo update-locale LANG=en_US.UTF-8
 
+  # For more /boot/config.txt modifications, see:
+  # https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README
+
   # TODO(maruel): On the Raspberry Pi Zero, enable Ethernet over USB. This is
   # extremely useful! Need to detect the hardware and only do it when it makes
   # sense.
   #echo -e "\n# Enable ethernet over USB\ndtoverlay=dwc2\n" | sudo tee --append /boot/config.txt
+
+  # Enable SPI1 in addition to SPI0.
+  # To enable SPI1 on RPi3, Bluetooth needs to be disabled.
+  #echo -e "\n# Enable SPI1:\ndtoverlay=spi1-2cs" | sudo tee --append /boot/config.txt
+  #if RPi2 or RPi3; then
+  #  echo -e "\n# Disable UART1:\ndtparam=uart1=off" | sudo tee --append /boot/config.txt
+  #fi
+  #if RPi3; then
+  #  echo -e "# Disable Bluetooth:\ndtoverlay=pi3-disable-bt\n" | sudo tee --append /boot/config.txt
+  #  sudo systemctl disable hciuart
+  #fi
 }
 
 
