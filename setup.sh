@@ -272,7 +272,7 @@ function install_go {
   #URL=${BASE_URL}/${FILENAME}
   echo "- Fetching $URL"
   echo "  as $FILENAME"
-  wget $URL
+  curl -o $FILENAME -sS $URL
   sudo tar -C /usr/local -xzf $FILENAME
   rm $FILENAME
   # We need to set GOPATH and PATH.

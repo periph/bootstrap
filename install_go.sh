@@ -27,7 +27,7 @@ FILENAME=`echo ${URL} | cut -d / -f 5`
 
 echo "- Fetching $URL"
 echo "  as $FILENAME"
-wget $URL
+curl -o $FILENAME -sS $URL
 sudo tar -C /usr/local -xzf $FILENAME
 rm $FILENAME
 
