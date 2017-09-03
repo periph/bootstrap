@@ -31,7 +31,7 @@ echo "Network is UP"
 
 set -eu
 
-function apt_update_install() {
+function apt_update_install {
   # Try to work around:
   #  WARNING: The following packages cannot be authenticated!
   sudo apt-key update
@@ -54,7 +54,7 @@ function apt_update_install() {
 }
 
 
-function board_detect() {
+function board_detect {
   # Automatic detection.
   # TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
   # step in the right direction.
@@ -77,7 +77,7 @@ function board_detect() {
 }
 
 
-function setup_beaglebone() {
+function setup_beaglebone {
   # The Beaglebone comes with a lot of packages, which fills up the small 4Gb
   # eMMC quickly. Make some space as we won't be using these.
   # Use the following to hunt and kill:
@@ -117,7 +117,7 @@ EOF
 }
 
 
-function setup_chip() {
+function setup_chip {
   echo "Enabling SPI"
   sudo tee /etc/systemd/system/enable_spi.service > /dev/null <<EOF
 [Unit]
@@ -137,7 +137,7 @@ EOF
 }
 
 
-function setup_odroid() {
+function setup_odroid {
   # By default there is not user account. Create one. The main problem is that
   # it means that it is impossible to ssh in until the account is created.
   sudo useradd odroid --password odroid -M --shell /bin/bash \
@@ -204,11 +204,18 @@ EOF
 
   # For more /boot/config.txt modifications, see:
   # https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README
+  # https://www.raspberrypi.org/documentation/configuration/config-txt/
 
-  # TODO(maruel): On the Raspberry Pi Zero, enable Ethernet over USB. This is
-  # extremely useful! Need to detect the hardware and only do it when it makes
-  # sense.
-  #echo -e "\n# Enable ethernet over USB\ndtoverlay=dwc2\n" | sudo tee --append /boot/config.txt
+  # On the Raspberry Pi Zero, enable Ethernet over USB. This is extremely
+  # useful!
+  sudo tee --append /boot/config.txt > /dev/null <<EOF
+
+# Enable ethernet over USB for Raspberry Pi Zero / Zero Wireless.
+[pi0]
+dtoverlay=dwc2
+[all]
+
+EOF
 
   # Enable SPI1 in addition to SPI0.
   # To enable SPI1 on RPi3, Bluetooth needs to be disabled.
@@ -223,7 +230,7 @@ EOF
 }
 
 
-function setup_ssh() {
+function setup_ssh {
   # Assumes there is only one account. This is true for most distros. The value is
   # generally one of: pi, debian, odroid, chip.
   USERNAME="$(ls /home)"
@@ -245,7 +252,7 @@ function setup_ssh() {
 }
 
 
-function install_go() {
+function install_go {
   ### install_go.sh ###
 
   # Install the Go toolchain.
@@ -277,7 +284,7 @@ function install_go() {
 }
 
 
-function setup_unattended_upgrade() {
+function setup_unattended_upgrade {
   echo "- Setup automatic upgrades"
   # Enable automatic reboot when necessary. We do not want unsafe devices! This
   # requires package unattended-upgrades.
@@ -295,7 +302,7 @@ EOF
 }
 
 
-function do_rename_host() {
+function do_rename_host {
   ### rename_host.sh ###
 
   # Generate a hostname based on the serial number of the CPU with leading zeros
@@ -332,7 +339,7 @@ function do_rename_host() {
 }
 
 
-function fix_motd() {
+function fix_motd {
   echo "- Changing MOTD"
   echo "Welcome to $HOST" | sudo tee /etc/motd
   if [ -f /etc/update-motd.d/10-help-text ]; then
@@ -342,7 +349,7 @@ function fix_motd() {
 }
 
 
-function do_all() {
+function do_all {
   apt_update_install
   board_detect
   if [ $BOARD = beaglebone ]; then

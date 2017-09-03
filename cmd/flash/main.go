@@ -75,6 +75,9 @@ var hostMap = map[Distro]string{
 }
 
 const wpaSupplicant = `
+country=CA
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
 network={
   ssid="%s"
   psk="%s"
@@ -91,6 +94,15 @@ hdmi_cvt 800 480 60 6 0 0 0
 # Some displays use 22, others 25.
 # Enabling this means the SPI bus cannot be used anymore.
 #dtoverlay=ads7846,penirq=22,penirq_pull=2,speed=10000,xohms=150
+`
+
+const raspbianUART = `
+
+# Enable console on UART on RPi3
+# https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
+[pi3]
+enable_uart=1
+[all]
 `
 
 const rcLocalContent = `
@@ -174,37 +186,79 @@ func chownRecursive(path string, uid, gid int) error {
 
 // Image fetching
 
-// Reads the image listing to find the latest one.
+func fetchURL(url string) ([]byte, error) {
+	r, err := http.DefaultClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to fetch %q: %v", url, err)
+	}
+	defer r.Body.Close()
+	if r.StatusCode != 200 {
+		return nil, fmt.Errorf("Failed to fetch %q: status %d", url, r.StatusCode)
+	}
+	reply, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read %q: %v", url, err)
+	}
+	return reply, nil
+}
+
+// raspbianGetLatestImageURL reads the image listing to find the latest one.
+//
+// Getting the torrent would be nicer to the host.
 func raspbianGetLatestImageURL() (string, string) {
 	// This is where https://downloads.raspberrypi.org/raspbian_lite_latest
 	// redirects to.
 	const baseImgURL = "https://downloads.raspberrypi.org/raspbian_lite/images/"
-	const imgFmt = "raspbian_lite-%s/%s-raspbian-jessie-lite.zip"
-	const fileFmt = "%s-raspbian-jessie-lite.img"
+	const dirFmt = "raspbian_lite-%s/"
+	re1 := regexp.MustCompile(`raspbian_lite-(20\d\d-\d\d-\d\d)/`)
+	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspbian-[[:alpha:]]+-lite\.zip)`)
+	var matches [][][]byte
+	var match [][]byte
+
 	// Use a recent (as of now) default date, it's not a big deal if the image is
 	// a bit stale, it'll just take more time to "apt upgrade".
-	date := "2017-04-10"
-	if r, err := http.DefaultClient.Get(baseImgURL); err == nil {
-		defer r.Body.Close()
-		// This will be good until 2099.
-		re := regexp.MustCompile(`raspbian_lite-(20\d\d-\d\d-\d\d)/`)
-		if reply, err := ioutil.ReadAll(r.Body); err == nil {
-			if matches := re.FindAllSubmatch(reply, -1); len(matches) != 0 {
-				// It's already in sorted order.
-				date = string(matches[len(matches)-1][1])
-			} else {
-				log.Printf("failed to match")
-			}
-		} else {
-			log.Printf("failed to read")
-		}
-	} else {
-		log.Printf("failed to fetch")
+	date := "2017-08-16"
+	distro := "stretch"
+	zipFile := date + "-raspbian-" + distro + "-lite.zip"
+	imgFile := date + "-raspbian-" + distro + "-lite.img"
+
+	r, err := fetchURL(baseImgURL)
+	if err != nil {
+		log.Printf("failed to fetch: %v", err)
+		goto end
 	}
-	url := baseImgURL + fmt.Sprintf(imgFmt, date, date)
+
+	// This will be good until 2099.
+	matches = re1.FindAllSubmatch(r, -1)
+	if len(matches) == 0 {
+		log.Printf("failed to match: %q", r)
+		goto end
+	}
+
+	// It's already in sorted order.
+	date = string(matches[len(matches)-1][1])
+
+	// Find the distro name.
+	r, err = fetchURL(baseImgURL + fmt.Sprintf(dirFmt, date))
+	if err != nil {
+		log.Printf("failed to fetch: %v", err)
+		goto end
+	}
+	match = re2.FindSubmatch(r)
+	if len(match) == 0 {
+		log.Printf("failed to match: %q", r)
+		goto end
+	}
+	zipFile = string(match[1])
+	imgFile = zipFile[:len(zipFile)-3] + "img"
+
+end:
+	url := baseImgURL + fmt.Sprintf(dirFmt, date) + zipFile
 	log.Printf("Raspbian date: %s", date)
-	log.Printf("Latest Raspbian: %s", url)
-	return url, fmt.Sprintf(fileFmt, date)
+	log.Printf("Raspbian distro: %s", distro)
+	log.Printf("Raspbian URL: %s", url)
+	log.Printf("Raspbian file: %s", imgFile)
+	return url, imgFile
 }
 
 // fetchImg fetches the distro image remotely.
@@ -254,15 +308,10 @@ func fetchImg() (string, error) {
 			return imgname, nil
 		}
 		fmt.Printf("- Fetching %s\n", imgname)
-		resp, err := http.DefaultClient.Get(imgurl)
-		if err != nil {
-			return "", err
-		}
 		// Read the whole file in memory. This is less than 300Mb. Save to disk if
 		// it is too much for your system.
 		// TODO(maruel): Progress bar?
-		z, err := ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
+		z, err := fetchURL(imgurl)
 		if err != nil {
 			return "", err
 		}
@@ -353,10 +402,12 @@ func umount(p string) error {
 
 // Editing image code
 
-// enable5inches enables non-standard 5" 800x480 display support.
+// raspbianEnable5inches enables non-standard 5" 800x480 display support.
 //
 // Found one at 23$USD with free shipping on aliexpress.
-func enable5inches(root, boot string) error {
+//
+// https://www.raspberrypi.org/documentation/configuration/config-txt/
+func raspbianEnable5inches(boot string) error {
 	fmt.Printf("- Enabling 5\" display support\n")
 	switch distro {
 	case raspbian:
@@ -373,7 +424,22 @@ func enable5inches(root, boot string) error {
 	}
 }
 
-func setupFirstBoot(root, boot string) error {
+// raspbianEnableUART enables console on UART on RPi3.
+//
+// https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
+func raspbianEnableUART(boot string) error {
+	fmt.Printf("- Enabling console on UART on RPi3\n")
+	f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	if _, err = f.WriteString(raspbianUART); err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+func setupFirstBoot(root string) error {
 	fmt.Printf("- First boot setup script\n")
 	if err := copyFile(filepath.Join(root, "root", "firstboot.sh"), "setup.sh", 0755); err != nil {
 		return err
@@ -457,7 +523,7 @@ func setupSSH(root, boot string) error {
 	return nil
 }
 
-func setupWifi(root, boot string) error {
+func setupWifi(root string) error {
 	fmt.Printf("- Wifi")
 	f, err := os.OpenFile(filepath.Join(root, "etc", "wpa_supplicant", "wpa_supplicant.conf"), os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
@@ -547,11 +613,17 @@ func mainAsRoot() error {
 		return errors.New("flash() is not implemented on this OS")
 	}
 
-	if err = setupFirstBoot(root, boot); err != nil {
+	// TODO(maruel): Figure out a way to only edit 'boot' and not 'root', so that
+	// it could be easily done on any platform. An option is to put the script on
+	// the boot (FAT16) partition and find a way to run it from within linux,
+	// like by editing /etc/rc.local directly in the disk image. Since on Debian
+	// /etc/rc.local is mostly comments, it's likely large enough to be safely
+	// overwritten.
+	if err = setupFirstBoot(root); err != nil {
 		return err
 	}
 	if *fiveInches {
-		if err = enable5inches(root, boot); err != nil {
+		if err = raspbianEnable5inches(boot); err != nil {
 			return err
 		}
 	}
@@ -561,12 +633,15 @@ func mainAsRoot() error {
 		}
 	}
 	if len(*wifiSSID) != 0 {
-		if err = setupWifi(root, boot); err != nil {
+		if err = setupWifi(root); err != nil {
 			return err
 		}
 	}
-	// https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
-	// enable_uart=1 for RPi?
+	if distro == raspbian {
+		if err = raspbianEnableUART(boot); err != nil {
+			return err
+		}
+	}
 
 	switch runtime.GOOS {
 	case "linux":
@@ -665,6 +740,9 @@ func mainImpl() error {
 	}
 	if len(*sdCard) == 0 {
 		return errors.New("-sdcard is required")
+	}
+	if distro == "" {
+		return errors.New("-distro is required")
 	}
 	if *asRoot {
 		return mainAsRoot()
