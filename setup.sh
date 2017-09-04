@@ -72,10 +72,9 @@ function do_chip {
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   # Assumption:
-  # - Debian image
-  # - User/pwd: chip/chip
   # - Flash with http://flash.getchip.com : Choose the Headless image.
-  # - Connect with screen /dev/ttyACM0
+  # - User/pwd: chip/chip
+  # - Connect with: screen /dev/ttyACM0
   # - Make sure you the C.H.I.P. has network access. This simplest is:
   #     nmcli device wifi list
   #     sudo nmcli device wifi connect '<ssid>' password '<pwd>' ifname wlan0
@@ -534,6 +533,28 @@ function do_update_motd {
 }
 
 
+function do_wifi {
+  echo "- do_wifi: Configures wifi"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  if [ which nmcli > /dev/null ]; then
+    run nmcli device wifi list
+    run sudo nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASS" ifname wlan0
+  else
+    run sudo tee /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null <<EOF
+country=CA
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+network={
+  ssid="${WIFI_SSID}"
+  psk="${WIFI_PASS}"
+}
+EOF
+    # TODO(maruel): Wake up wpa_supplicant.
+  fi
+}
+
+
 function do_all {
   echo "- do_all: Runs all default installation steps"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
@@ -541,10 +562,11 @@ function do_all {
   detect_board
 
   # TODO(maruel): Add new commands:
-  # - do_wifi with arguments
   # - do_5inch
-  # - inline enable_sendmail.sh
   # - enable_uart on Raspbian
+  if [ $WIFI_PASS != "" ]; then
+    do_wifi
+  fi
   wait_network
   do_apt
   if [ $BOARD = beaglebone ]; then
@@ -665,6 +687,8 @@ Options:
   -nr --no-reboot    Disable rebooting at the end
   -ng --no-go        Disable installing Go toolchain
   -e  --email <addr> Email address to forward all root@localhost to
+  -ws --wifi-ssid <ssid> SSID to connect to
+  -wp --wifi-pass <pwd>  Password to use for Wifi
 
 Commands:
 EOF
@@ -695,6 +719,8 @@ BANNER_ONLY=0
 DRY_RUN=0
 KEEP_HDMI=0
 DEST_EMAIL=""
+WIFI_SSID=""
+WIFI_PASS=""
 
 
 while [ $# -gt 0 ]; do
@@ -732,6 +758,16 @@ while [ $# -gt 0 ]; do
   "-h" | "--help" | "help")
     show_help
     exit 1
+    ;;
+  "-ws" | "--wifi-ssid")
+    WIFI_SSID=$1
+    # TODO(maruel): Verify is not empty.
+    shift
+    ;;
+  "-wp" | "--wifi-pass")
+    WIFI_PASS=$1
+    # TODO(maruel): Verify is not empty.
+    shift
     ;;
 
   # Commands

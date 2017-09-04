@@ -41,14 +41,14 @@ flash --distro raspbian --wifi <ssid> <pwd> /dev/sdh
 for example on a Beaglebone or a C.H.I.P. which have integrated non-removable
 flash.
 
-
-### Setuping a device
-
 If you already have a running device and want to run setup on it, use:
 
 ```
-curl -sSL https://goo.gl/JcTSsH | bash
+curl -sSL https://goo.gl/JcTSsH | bash -s -- --wifi-ssid MY_WIFI --wifi-pass WIFI_PASS --email myself@example.com
 ```
+
+replacing the `WIFI_` values with your Wifi connection, and `myself@example.com`
+with your email address so you are alerted whenever `apt-get upgrade` runs.
 
 
 ### Installing Go
