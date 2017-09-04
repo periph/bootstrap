@@ -220,6 +220,15 @@ function do_raspberrypi {
   run sudo raspi-config nonint do_ssh 0
   run sudo raspi-config nonint do_camera 0
 
+  if [ $ACTION_SPI1 -eq 1 ]; then
+    echo "  Enable SPI1"
+    run sudo tee --append /boot/config.txt > /dev/null <<EOF
+# Enable SPI1:
+dtoverlay=spi1-2cs
+
+EOF
+  fi
+
   if [ $KEEP_HDMI -eq 0 ]; then
     echo "  Disabling HDMI output"
     run sudo tee /etc/systemd/system/hdmi_disable.service > /dev/null <<EOF
@@ -490,6 +499,7 @@ EOF
 
 # Default actions.
 ACTION_GO=1
+ACTION_SPI1=0   # TODO(maruel): Surface, may have side effect with UART and BT.
 ACTION_REBOOT=1
 BANNER_ONLY=0
 DRY_RUN=0
