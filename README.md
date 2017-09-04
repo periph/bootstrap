@@ -1,11 +1,12 @@
 # Bootstrap micro computers
 
 Bootstrapping a micro computer can be tedious. This repository contains Go tools
-to help with that specifically to automate the deployment as much as possible.
+to help with that specifically to automate the deployment as much as possible
+and make the boxes as secure as possible.
 
 This toolbox was written to help manage the
 [gohci](https://github.com/periph/gohci) workers, so they can be reflashed
-easily in case of tampering but the script are intentionally generic and
+easily in case of tampering. That said, the script are intentionally generic and
 reusable.
 
 
@@ -20,7 +21,7 @@ for portability:
   that Raspbian Stretch doesn't advertize anymore.
 
 
-### Flashing the micro computer
+## Flashing an SD Card
 
 This example downloads the Raspbian Stretch Lite image and flashes it to an SD
 Card. You must supply the path to the SD card, generally in the form of
@@ -34,7 +35,7 @@ flash --distro raspbian --wifi <ssid> <pwd> /dev/sdh
 `flash` takes care of all the steps below on the micro computer's initial boot.
 
 
-## On the micro computer
+## Configuring a micro computer
 
 `setup.sh` is an all-in-one tool that can be used on an already flashed device,
 for example on a Beaglebone or a C.H.I.P. which have integrated non-removable
@@ -44,6 +45,7 @@ flash.
 ### Setuping a device
 
 If you already have a running device and want to run setup on it, use:
+
 ```
 curl -sSL https://goo.gl/JcTSsH | bash
 ```
@@ -51,7 +53,7 @@ curl -sSL https://goo.gl/JcTSsH | bash
 
 ### Installing Go
 
-To install or update in-place your Go toolchain on the micro computer:
+To install or update in-place your Go toolchain on any computer:
 
 ```
 cuSL https://goo.gl/JcTSsH | bash -s -- do_golang
@@ -66,6 +68,15 @@ serial number or systemd's hostctl 'Machine ID'.
 
 ```
 cuSL https://goo.gl/JcTSsH | bash -s -- do_rename_host
+```
+
+
+### Configure postfix
+
+To forward all emails sent to `root@localhost` via sendmail, use:
+
+```
+cuSL https://goo.gl/JcTSsH | bash -s -- --email foo@example.com do_sendmail
 ```
 
 

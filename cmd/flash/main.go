@@ -112,7 +112,7 @@ const rcLocalContent = `
 
 LOG_FILE=/var/log/firstboot.log
 if [ ! -f $LOG_FILE ]; then
-  /root/firstboot.sh 2>&1 | tee $LOG_FILE
+  /root/firstboot.sh%s 2>&1 | tee $LOG_FILE
 fi
 exit 0
 `
@@ -120,6 +120,7 @@ exit 0
 var (
 	distro     Distro
 	sshKey     = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
+	email      = flag.String("email", "", "email address to forward root@localhost to")
 	wifiSSID   = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass   = flag.String("wifi-pass", "", "wifi password")
 	fiveInches = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (raspbian only)")
@@ -456,7 +457,11 @@ func setupFirstBoot(root string) error {
 	// the partition on first boot.
 	content := strings.TrimRightFunc(string(b), unicode.IsSpace)
 	content = strings.TrimSuffix(content, "exit 0")
-	content += rcLocalContent
+	args := ""
+	if len(*email) != 0 {
+		args += " -e " + *email
+	}
+	content += fmt.Sprintf(rcLocalContent, args)
 	log.Printf("Writing %q:\n%s", rcLocal, content)
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
 }
