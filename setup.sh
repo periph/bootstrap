@@ -16,78 +16,7 @@
 set -eu
 
 
-function run {
-  if [ $DRY_RUN -eq 0 ]; then
-    $@
-  else
-    echo "    Dry run: $*"
-  fi
-}
-
-
-function wait_network {
-  echo "- wait_network: Waiting for network to be up and running"
-  until ping -c1 www.google.com &>/dev/null; do :; done
-  echo "- Network is UP"
-}
-
-
-function detect_board {
-  # Defines both DIST and BOARD.
-  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
-
-  # TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
-  # step in the right direction.
-  DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
-  BOARD=unknown
-  if [ -f /etc/dogtag ]; then
-    BOARD=beaglebone
-  fi
-  if [ -f /etc/chip_build_info.txt ]; then
-    BOARD=chip
-  fi
-  if [ -f /etc/apt/sources.list.d/odroid.list ]; then
-    # Fetching from ODROID's primary repository.
-    BOARD=odroid
-  fi
-  if [ $DIST = raspbian ]; then
-    BOARD=raspberrypi
-  fi
-  echo "  Detected board: $BOARD"
-}
-
-
-function conditional_reboot {
-  if [ $ACTION_REBOOT -eq 1 ]; then
-    sudo shutdown -r now
-  fi
-}
-
-
-function do_apt {
-  echo "- do_apt: Run apt-get update & upgrade and install few apps"
-  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
-
-  # Try to work around:
-  #  WARNING: The following packages cannot be authenticated!
-  run sudo apt-key update
-
-  run sudo apt-get update
-  run sudo apt-get upgrade -y
-  # If you are space constrained, here's the approximative size:
-  # git:                 17.7MB
-  # ifstat:               3.3MB
-  # python:                18MB
-  # sysstat:              1.3MB
-  # ssh:                  130kB
-  # tmux:                 670kB
-  # unattended-upgrades: 18.1MB (!)
-  # vim:                   28MB (!)
-  #
-  # curl is missing on odroid.
-  # Optional: ifstat python sysstat
-  run sudo apt-get install -y curl git ssh tmux unattended-upgrades vim
-}
+## Board specific functions.
 
 
 function do_beaglebone {
@@ -287,6 +216,35 @@ EOF
 }
 
 
+## Generic changes.
+
+
+function do_apt {
+  echo "- do_apt: Run apt-get update & upgrade and install few apps"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # Try to work around:
+  #  WARNING: The following packages cannot be authenticated!
+  run sudo apt-key update
+
+  run sudo apt-get update
+  run sudo apt-get upgrade -y
+  # If you are space constrained, here's the approximative size:
+  # git:                 17.7MB
+  # ifstat:               3.3MB
+  # python:                18MB
+  # sysstat:              1.3MB
+  # ssh:                  130kB
+  # tmux:                 670kB
+  # unattended-upgrades: 18.1MB (!)
+  # vim:                   28MB (!)
+  #
+  # curl is missing on odroid.
+  # Optional: ifstat python sysstat
+  run sudo apt-get install -y curl git ssh tmux unattended-upgrades vim
+}
+
+
 function do_ssh {
   echo "- do_ssh: Enable passwordless ssh"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
@@ -463,6 +421,57 @@ function do_all {
 }
 
 
+## Utility functions.
+
+
+function run {
+  if [ $DRY_RUN -eq 0 ]; then
+    $@
+  else
+    echo "    Dry run: $*"
+  fi
+}
+
+
+function wait_network {
+  echo "- wait_network: Waiting for network to be up and running"
+  until ping -c1 www.google.com &>/dev/null; do :; done
+  echo "- Network is UP"
+}
+
+
+function detect_board {
+  # Defines both DIST and BOARD.
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
+  # step in the right direction.
+  DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
+  BOARD=unknown
+  if [ -f /etc/dogtag ]; then
+    BOARD=beaglebone
+  fi
+  if [ -f /etc/chip_build_info.txt ]; then
+    BOARD=chip
+  fi
+  if [ -f /etc/apt/sources.list.d/odroid.list ]; then
+    # Fetching from ODROID's primary repository.
+    BOARD=odroid
+  fi
+  if [ $DIST = raspbian ]; then
+    BOARD=raspberrypi
+  fi
+  echo "  Detected board: $BOARD"
+}
+
+
+function conditional_reboot {
+  if [ $ACTION_REBOOT -eq 1 ]; then
+    sudo shutdown -r now
+  fi
+}
+
+
 function show_help {
   if [ "$0" = bash ]; then
     echo ""
@@ -495,6 +504,9 @@ command line can be supplied after '--', it'll be run before rebooting the
 host.
 EOF
 }
+
+
+## Main.
 
 
 # Default actions.
@@ -532,7 +544,7 @@ while [ $# -gt 0 ]; do
     echo "-> Skip installing Go"
     ACTION_GO=0
     ;;
-  "-h" | "--help")
+  "-h" | "--help" | "help")
     show_help
     exit 1
     ;;
