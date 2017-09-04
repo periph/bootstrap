@@ -343,7 +343,7 @@ function do_golang {
   local GO_OS_NAME=linux
 
   if [ "$(getconf LONG_BIT)" == "64" ]; then
-    if [ $GO_ARCH == "arm" ]; then
+    if [ $GO_ARCH == arm ]; then
       echo "  Falling back to local go toolchain compilation"
       do_golang_compile
       return 0
@@ -428,7 +428,7 @@ function do_sendmail {
   echo "- do_sendmail: Enables sending emails + sends email upon apt-get actions"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  if [ $DEST_EMAIL = "" ]; then
+  if [ "$DEST_EMAIL" = "" ]; then
     echo "  Must specify the email address to forward root@localhost to"
     exit 1
   fi
@@ -564,7 +564,7 @@ function do_all {
   # TODO(maruel): Add new commands:
   # - do_5inch
   # - enable_uart on Raspbian
-  if [ $WIFI_PASS != "" ]; then
+  if [ "$WIFI_PASS" != "" ]; then
     do_wifi
   fi
   wait_network
@@ -582,7 +582,7 @@ function do_all {
     do_raspberrypi
   fi
   do_ssh
-  if [ $ACTION_GO ]; then
+  if [ $ACTION_GO -eq 1 ]; then
     # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
     do_golang
   fi
