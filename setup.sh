@@ -85,12 +85,10 @@ function do_chip {
 [Unit]
 Description=Enable SPI
 After=auditd.service
-
 [Service]
 Type=oneshot
 Restart=no
 ExecStart=/bin/sh -c 'mkdir -p /sys/kernel/config/device-tree/overlays/spi && cp /lib/firmware/nextthingco/chip/sample-spi.dtbo /sys/kernel/config/device-tree/overlays/spi/dtbo'
-
 [Install]
 WantedBy=default.target
 EOF
@@ -122,14 +120,6 @@ function do_odroid {
   run sudo chown odroid:odroid /home/odroid/.[!.]*
   # This file is created automatically and owned by root.
   run rm -rf /home/odroid/resize.log
-
-  # TODO(maruel): Installing avahi-daemon is not sufficient to have it expose
-  # _workstation._tcp over mDNS.
-  #    sudo apt install -y avahi-daemon
-
-  # TODO(maruel): Do it in cmd/flash too.
-  echo "  Disabling root ssh support"
-  run sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
 }
 
 
@@ -137,8 +127,8 @@ function do_raspberrypi {
   echo "- do_raspberrypi: Raspbian specific changes"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  run sudo apt -y remove triggerhappy
-  run sudo apt install -y ntpdate
+  run sudo apt-get -y remove triggerhappy
+  run sudo apt-get install -y ntpdate
 
   echo "  Enable SPI0, I2C1, Camera, ssh"
   # https://github.com/RPi-Distro/raspi-config/blob/master/raspi-config
@@ -289,6 +279,13 @@ function do_ssh {
     echo "  Disabling ssh password authentication support"
     run sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
   fi
+
+  # Some distros (like O-DROID with Ubuntu minimal) enable ssh as root. This is
+  # not a good idea, remove.
+  echo "  Disable root ssh support"
+  run sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+  echo "  Disable password based authentication"
+  run sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 }
 
 
@@ -321,11 +318,11 @@ function do_golang_compile {
     GOROOT_BOOTSTRAP=/usr/local/go run ./make.bash
   else
     # Temporarily install the golang debian package.
-    run sudo apt install -y golang
+    run sudo apt-get install -y golang
     # TODO(maruel): Use GOROOT_FINAL=/usr/local/go ?
     GOROOT_BOOTSTRAP=/usr/lib/go run ./make.bash
     # Remove the outdated system version.
-    run sudo apt remove -y golang
+    run sudo apt-get remove -y golang
     # Copy itself to a backup so the next upgrade is from a more recent version.
     run cp -a ~/golang ~/go1.4
   fi
@@ -439,7 +436,7 @@ function do_sendmail {
   # If you are space constrained, here's the approximative size:
   # bsd-mailx:            3.8MB
   # postfix:              570kB
-  run sudo DEBIAN_FRONTEND=noninteractive apt install -yq bsd-mailx postfix
+  run sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq bsd-mailx postfix
 
   # Enables sending emails over TLS. Because we want our emails to be secure.
   echo "  Configure outgoing emails"
@@ -490,7 +487,7 @@ EOF
   run sudo systemctl restart postfix
 
   echo "  Sending a test email"
-  cat <<EOF | run sendmail -t
+  cat <<EOF | run /usr/sbin/sendmail -t
 FROM: setup.sh
 TO: root
 Subject: $HOST is configured!
