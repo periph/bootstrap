@@ -619,6 +619,7 @@ func mainAsRoot() error {
 	// like by editing /etc/rc.local directly in the disk image. Since on Debian
 	// /etc/rc.local is mostly comments, it's likely large enough to be safely
 	// overwritten.
+	// https://github.com/periph/bootstrap/issues/1
 	if err = setupFirstBoot(root); err != nil {
 		return err
 	}
@@ -638,6 +639,7 @@ func mainAsRoot() error {
 		}
 	}
 	if distro == raspbian {
+		// TODO(maruel): Make this optional.
 		if err = raspbianEnableUART(boot); err != nil {
 			return err
 		}

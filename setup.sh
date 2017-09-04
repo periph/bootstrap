@@ -7,55 +7,35 @@
 #   curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/setup.sh | bash
 #   curl -sSL https://goo.gl/JcTSsH | bash
 #
-# - Beaglebone:
-#   - User/pwd: debian/temppwd
-#   - sudo connmanctl services; sudo connmanctl connect wifi...
-# - C.H.I.P.:
-#   - User/pwd: chip/chip
-#   - Flash with http://flash.getchip.com : Choose the Headless image.
-#   - Connect with screen /dev/ttyACM0
-#   - Make sure you the C.H.I.P. has network access. This simplest is:
-#     nmcli device wifi list
-#     sudo nmcli device wifi connect '<ssid>' password '<pwd>' ifname wlan0
-# - ODROID-C1 with Ubuntu 16.04.1 minimal:
-#   - adduser odroid
-#   - usermod -a -G sudo odroid
-#   - apt install curl
-# - Raspbian Jessie:
-#   - User/pwd: pi/raspberry
-#   - Flash with ./flash_rasbian.sh
-
-echo "Waiting for network to be up and running"
-until ping -c1 www.google.com &>/dev/null; do :; done
-echo "Network is UP"
+# Notes:
+# - Functions do_* execute system modifications.
+# - Other functions have no side effects, except 'run' which runs a command.
+# - For board specific changes, see do_setup_BOARDNAME.
+#
 
 set -eu
 
-function apt_update_install {
-  # Try to work around:
-  #  WARNING: The following packages cannot be authenticated!
-  sudo apt-key update
 
-  sudo apt-get update
-  sudo apt-get upgrade -y
-  # If you are space constrained, here's the approximative size:
-  # git:                 17.7MB
-  # ifstat:               3.3MB
-  # python:                18MB
-  # sysstat:              1.3MB
-  # ssh:                  130kB
-  # tmux:                 670kB
-  # unattended-upgrades: 18.1MB (!)
-  # vim:                   28MB (!)
-  #
-  # curl is missing on odroid.
-  # Optional: ifstat python sysstat
-  sudo apt-get install -y curl git ssh tmux unattended-upgrades vim
+function run {
+  if [ $DRY_RUN -eq 0 ]; then
+    $@
+  else
+    echo "    Dry run: $*"
+  fi
 }
 
 
-function board_detect {
-  # Automatic detection.
+function wait_network {
+  echo "- wait_network: Waiting for network to be up and running"
+  until ping -c1 www.google.com &>/dev/null; do :; done
+  echo "- Network is UP"
+}
+
+
+function detect_board {
+  # Defines both DIST and BOARD.
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
   # TODO(maruel): It is very brittle, using /proc/device-tree/model would be a
   # step in the right direction.
   DIST="$(grep '^ID=' /etc/os-release | cut -c 4-)"
@@ -73,16 +53,55 @@ function board_detect {
   if [ $DIST = raspbian ]; then
     BOARD=raspberrypi
   fi
-  echo "Detected board: $BOARD"
+  echo "  Detected board: $BOARD"
 }
 
 
-function setup_beaglebone {
-  # The Beaglebone comes with a lot of packages, which fills up the small 4Gb
-  # eMMC quickly. Make some space as we won't be using these.
+function conditional_reboot {
+  if [ $ACTION_REBOOT -eq 1 ]; then
+    sudo shutdown -r now
+  fi
+}
+
+
+function do_apt {
+  echo "- do_apt: Run apt-get update & upgrade and install few apps"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # Try to work around:
+  #  WARNING: The following packages cannot be authenticated!
+  run sudo apt-key update
+
+  run sudo apt-get update
+  run sudo apt-get upgrade -y
+  # If you are space constrained, here's the approximative size:
+  # git:                 17.7MB
+  # ifstat:               3.3MB
+  # python:                18MB
+  # sysstat:              1.3MB
+  # ssh:                  130kB
+  # tmux:                 670kB
+  # unattended-upgrades: 18.1MB (!)
+  # vim:                   28MB (!)
+  #
+  # curl is missing on odroid.
+  # Optional: ifstat python sysstat
+  run sudo apt-get install -y curl git ssh tmux unattended-upgrades vim
+}
+
+
+function do_beaglebone {
+  echo "- do_beaglebone: Beaglebone specific changes"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # - User/pwd: debian/temppwd
+
+  # The Beaglebone comes with a lot of packages preinstalled, which fills up the
+  # small 4Gb eMMC quickly. Make some space as we won't be using these.
+  #
   # Use the following to hunt and kill:
   #   dpkg --get-selections | less
-  sudo apt-get remove -y \
+  run sudo apt-get remove -y \
     'ruby*' \
     apache2 \
     apache2-bin \
@@ -101,25 +120,40 @@ function setup_beaglebone {
     #rcn-ee-archive-keyring \
     #rcnee-access-point \
     #seeed-wificonfig-installer \
-  sudo apt-get purge -y apache2 mysql-common x11-common
+  run sudo apt-get purge -y apache2 mysql-common x11-common
 
-  echo "Enabling SPI"
+  echo "  Enabling SPI"
   #git clone https://github.com/beagleboard/bb.org-overlays
-  cd /opt/source/bb.org-overlays
-  ./dtc-overlay.sh
-  ./install.sh
-
-  sudo tee --append /boot/uEnv.txt > /dev/null <<EOF
+  run cd /opt/source/bb.org-overlays
+  run ./dtc-overlay.sh
+  run ./install.sh
+  run sudo tee --append /boot/uEnv.txt > /dev/null <<EOF
 
 # Change made by https://github.com/periph/bootstrap
 cape_enable=bone_capemgr.enable_partno=BB-SPIDEV0
 EOF
+
+  # TODO(maruel): Setup wifi.
+  #   - sudo connmanctl services; sudo connmanctl connect wifi...
 }
 
 
-function setup_chip {
-  echo "Enabling SPI"
-  sudo tee /etc/systemd/system/enable_spi.service > /dev/null <<EOF
+function do_chip {
+  echo "- do_chip: C.H.I.P. specific changes"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # Assumption:
+  # - Debian image
+  # - User/pwd: chip/chip
+  # - Flash with http://flash.getchip.com : Choose the Headless image.
+  # - Connect with screen /dev/ttyACM0
+  # - Make sure you the C.H.I.P. has network access. This simplest is:
+  #     nmcli device wifi list
+  #     sudo nmcli device wifi connect '<ssid>' password '<pwd>' ifname wlan0
+
+  echo "  Enabling SPI"
+  # Note: SPI on C.H.I.P. isn't stable.
+  run sudo tee /etc/systemd/system/enable_spi.service > /dev/null <<EOF
 [Unit]
 Description=Enable SPI
 After=auditd.service
@@ -132,50 +166,63 @@ ExecStart=/bin/sh -c 'mkdir -p /sys/kernel/config/device-tree/overlays/spi && cp
 [Install]
 WantedBy=default.target
 EOF
-  sudo systemctl daemon-reload
-  sudo systemctl enable enable_spi
+  run sudo systemctl daemon-reload
+  run sudo systemctl enable enable_spi
 }
 
 
-function setup_odroid {
+function do_odroid {
+  echo "- do_odroid: O-DROID C1+ specific changes"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # TODO(maruel): Assumptions:
+  # - ODROID-C1 with Ubuntu 16.04.1 minimal:
+  #
   # By default there is not user account. Create one. The main problem is that
   # it means that it is impossible to ssh in until the account is created.
-  sudo useradd odroid --password odroid -M --shell /bin/bash \
+  run sudo useradd odroid --password odroid -M --shell /bin/bash \
     -G adm,cdrom,dialout,dip,fax,floppy,plugdev,sudo,tape,video
-  echo odroid:odroid | sudo chpasswd
+  if [ $DRY_RUN -eq 0 ]; then
+    echo odroid:odroid | sudo chpasswd
+  else
+    echo "Dry run: echo odroid:odroid | sudo chpasswd"
+  fi
 
   # /etc/skel won't be copied automatically when the directory already existed,
   # so forcibly do it now.
-  sudo cp /etc/skel/.[!.]* /home/odroid
-  sudo chown odroid:odroid /home/odroid/.[!.]*
+  run sudo cp /etc/skel/.[!.]* /home/odroid
+  run sudo chown odroid:odroid /home/odroid/.[!.]*
   # This file is created automatically and owned by root.
-  rm -rf /home/odroid/resize.log
+  run rm -rf /home/odroid/resize.log
 
   # TODO(maruel): Installing avahi-daemon is not sufficient to have it expose
   # _workstation._tcp over mDNS.
   #    sudo apt install -y avahi-daemon
 
-  # TODO(maruel): Do it in cmd/flash.
-  echo "Disabling root ssh support"
-  sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+  # TODO(maruel): Do it in cmd/flash too.
+  echo "  Disabling root ssh support"
+  run sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
 }
 
 
-function setup_raspberrypi {
-  sudo apt -y remove triggerhappy
-  sudo apt install -y ntpdate
+function do_raspberrypi {
+  echo "- do_raspberrypi: Raspbian specific changes"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  run sudo apt -y remove triggerhappy
+  run sudo apt install -y ntpdate
+
+  echo "  Enable SPI0, I2C1, Camera, ssh"
   # https://github.com/RPi-Distro/raspi-config/blob/master/raspi-config
   # 0 means enabled.
-  # Enables SPI0.
-  sudo raspi-config nonint do_spi 0
-  # Enables I2C1.
-  sudo raspi-config nonint do_i2c 0
-  sudo raspi-config nonint do_ssh 0
-  sudo raspi-config nonint do_camera 0
-  echo "raspi-config done"
+  run sudo raspi-config nonint do_spi 0
+  run sudo raspi-config nonint do_i2c 0
+  run sudo raspi-config nonint do_ssh 0
+  run sudo raspi-config nonint do_camera 0
 
-  # TODO(maruel): This is a bit intense, most users will not want that.
-  sudo tee /etc/systemd/system/hdmi_disable.service > /dev/null <<EOF
+  if [ $KEEP_HDMI -eq 0 ]; then
+    echo "  Disabling HDMI output"
+    run sudo tee /etc/systemd/system/hdmi_disable.service > /dev/null <<EOF
 [Unit]
 Description=Disable HDMI output to lower overall power consumption
 After=auditd.service
@@ -189,18 +236,19 @@ ExecStart=/bin/sh -c '[ -f /opt/vc/bin/tvservice ] && /opt/vc/bin/tvservice -o |
 [Install]
 WantedBy=default.target
 EOF
-  sudo systemctl daemon-reload
-  sudo systemctl enable hdmi_disable
+    run sudo systemctl daemon-reload
+    run sudo systemctl enable hdmi_disable
+  fi
 
   # Use the us keyboard layout.
-  sudo sed -i 's/XKBLAYOUT="gb"/XKBLAYOUT="us"/' /etc/default/keyboard
+  run sudo sed -i 's/XKBLAYOUT="gb"/XKBLAYOUT="us"/' /etc/default/keyboard
   # Fix Wifi country settings for Canada.
-  sudo raspi-config nonint do_wifi_country CA
+  run sudo raspi-config nonint do_wifi_country CA
 
   # Switch to en_US.
-  sudo sed -i 's/en_GB/en_US/' /etc/locale.gen
-  sudo dpkg-reconfigure --frontend=noninteractive locales
-  sudo update-locale LANG=en_US.UTF-8
+  run sudo sed -i 's/en_GB/en_US/' /etc/locale.gen
+  run sudo dpkg-reconfigure --frontend=noninteractive locales
+  run sudo update-locale LANG=en_US.UTF-8
 
   # For more /boot/config.txt modifications, see:
   # https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README
@@ -208,7 +256,7 @@ EOF
 
   # On the Raspberry Pi Zero, enable Ethernet over USB. This is extremely
   # useful!
-  sudo tee --append /boot/config.txt > /dev/null <<EOF
+  run sudo tee --append /boot/config.txt > /dev/null <<EOF
 
 # Enable ethernet over USB for Raspberry Pi Zero / Zero Wireless.
 [pi0]
@@ -230,9 +278,15 @@ EOF
 }
 
 
-function setup_ssh {
-  # Assumes there is only one account. This is true for most distros. The value is
-  # generally one of: pi, debian, odroid, chip.
+function do_ssh {
+  echo "- do_ssh: Enable passwordless ssh"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # Assumes there is only one account. This is true for most distros. The value
+  # is generally one of: pi, debian, odroid, chip.
+  # TODO(maruel): This is brittle!
+  # TODO(maruel): Inconditionally disable root access.
+  # TODO(maruel): Enable ssh key as argument.
   USERNAME="$(ls /home)"
 
   # Uncomment and put your keys if desired. flash.py already handles this.
@@ -246,22 +300,23 @@ function setup_ssh {
   #  chown -R $USERNAME:$USERNAME /home/$USERNAME/.ssh
   #fi
   if [ -f /home/$USERNAME/.ssh/authorized_keys ]; then
-    echo "Disabling ssh password authentication support"
-    sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    echo "  Disabling ssh password authentication support"
+    run sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
   fi
 }
 
 
-function install_go {
-  ### install_go.sh ###
+function do_golang {
+  echo "- do_golang: Install latest Go toolchain"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  # Install the Go toolchain.
-  # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
-  echo "Installing the Go toolchain"
-  echo "- Magically figuring out latest version"
-  # TODO(maruel): Detect if x86.
-  GO_ARCH=armv6l
+  # Magically figuring out latest version
+  GO_ARCH=$(dpkg --print-architecture)
+  if [ $GO_ARCH = armhf ]; then
+    GO_ARCH=armv6l
+  fi
   GO_OS_NAME=linux
+  echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME}"
   URL=`curl -sS https://golang.org/dl/ | grep -Po "https://storage\.googleapis\.com/golang/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
   FILENAME=`echo ${URL} | cut -d / -f 5`
 
@@ -270,25 +325,36 @@ function install_go {
   #GO_VERSION=1.8.3
   #FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
   #URL=${BASE_URL}/${FILENAME}
-  echo "- Fetching $URL"
-  echo "  as $FILENAME"
-  curl -o $FILENAME -sS $URL
-  sudo tar -C /usr/local -xzf $FILENAME
-  rm $FILENAME
-  # We need to set GOPATH and PATH.
-  echo 'export GOPATH="$HOME/go"' | sudo tee /etc/profile.d/golang.sh
-  echo 'export PATH="$PATH:/usr/local/go/bin:$GOPATH/bin"' | sudo tee --append /etc/profile.d/golang.sh
-  sudo chmod 0555 /etc/profile.d/golang.sh
+  echo "  Fetching $URL"
+  echo "    as $FILENAME"
+  run curl -o $FILENAME -sS $URL
+  if [ -d /usr/local/go ]; then
+    echo "  Removing previous version in /usr/local/go"
+    run sudo rm -rf /usr/local/go
+  fi
+  echo "  Extracting to /usr/local/go"
+  run sudo tar -C /usr/local -xzf $FILENAME
+  run rm $FILENAME
+  echo "  Setting /etc/profile.d/golang.sh for GOPATH and PATH"
+  run sudo tee /etc/profile.d/golang.sh > /dev/null <<'EOF'
+export GOPATH="$HOME/go"
+export PATH="$PATH:/usr/local/go/bin:$GOPATH/bin"
+EOF
+  run sudo chmod 0555 /etc/profile.d/golang.sh
+  if [ $DRY_RUN -eq 0 ]; then
+    . /etc/profile.d/golang.sh
+  fi
   # TODO(maruel): Optionally go get a few tools?
-  echo "- Done"
 }
 
 
-function setup_unattended_upgrade {
-  echo "- Setup automatic upgrades"
+function do_setup_unattended_upgrade {
+  echo "- do_setup_unattended_upgrade: Enables automatic nightly OS update"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
   # Enable automatic reboot when necessary. We do not want unsafe devices! This
   # requires package unattended-upgrades.
-  sudo tee /etc/apt/apt.conf.d/90periph > /dev/null <<EOF
+  run sudo tee /etc/apt/apt.conf.d/90periph > /dev/null <<EOF
 # Generated by https://github.com/periph/bootstrap
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "03:48";
@@ -297,13 +363,14 @@ EOF
   if [ ! -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
     # The equivalent of: sudo dpkg-reconfigure unattended-upgrades
     # odroid has it by default, but raspbian doesn't.
-    sudo cp /usr/share/unattended-upgrades/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades
+    run sudo cp /usr/share/unattended-upgrades/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades
   fi
 }
 
 
 function do_rename_host {
-  ### rename_host.sh ###
+  echo "- do_rename_host: Renames the host"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   # Generate a hostname based on the serial number of the CPU with leading zeros
   # trimmed off, it is a constant yet unique value.
@@ -328,53 +395,168 @@ function do_rename_host {
   HOST="$BOARD-$SERIAL"
   echo "- New hostname is: $HOST"
   if [ $BOARD = raspberrypi ]; then
-    sudo raspi-config nonint do_hostname $HOST
+    run sudo raspi-config nonint do_hostname $HOST
   else
     #OLD="$(hostname)"
     #sudo sed -i "s/\$OLD/\$HOST/" /etc/hostname
     #sudo sed -i "s/\$OLD/\$HOST/" /etc/hosts
     # It hangs on the CHIP (?)
-    sudo hostnamectl set-hostname $HOST
+    run sudo hostnamectl set-hostname $HOST
   fi
 }
 
 
-function fix_motd {
-  echo "- Changing MOTD"
-  echo "Welcome to $HOST" | sudo tee /etc/motd
+function do_update_motd {
+  echo "- do_update_motd: Updates motd"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  echo "Welcome to $HOST" | run sudo tee /etc/motd
   if [ -f /etc/update-motd.d/10-help-text ]; then
     # This is just noise.
-    sudo chmod -x /etc/update-motd.d/10-help-text
+    run sudo chmod -x /etc/update-motd.d/10-help-text
   fi
 }
 
 
 function do_all {
-  apt_update_install
-  board_detect
+  echo "- do_all: Runs all default installation steps"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  detect_board
+
+  # TODO(maruel): Add new commands:
+  # - do_wifi with arguments
+  # - do_5inch
+  # - inline enable_sendmail.sh
+  # - enable_uart on Raspbian
+  wait_network
+  do_apt
   if [ $BOARD = beaglebone ]; then
-    setup_beaglebone
+    do_beaglebone
   fi
   if [ $BOARD = chip ]; then
-    setup_chip
+    do_chip
   fi
   if [ $BOARD = odroid ]; then
-    setup_odroid
+    do_odroid
   fi
   if [ $BOARD = raspberrypi ]; then
-    setup_raspberrypi
+    do_raspberrypi
   fi
-  setup_ssh
-  install_go
-  setup_unattended_upgrade
+  do_ssh
+  if [ $ACTION_GO ]; then
+    # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
+    do_golang
+  fi
+  do_setup_unattended_upgrade
   do_rename_host
-  fix_motd
-  # Reboot so the device starts advertizing itself with the new host name.
-  sudo shutdown -r now
+  do_update_motd
 }
 
 
-# TODO(maruel): Add support for flags to run optional steps or only run one,
-# like install_go
-# TODO(maruel): Add support for injecting a custom script before rebooting.
+function show_help {
+  if [ "$0" = bash ]; then
+    echo ""
+    echo "help is unsupported when curl'ed, please download first."
+    exit 1
+  fi
+
+  cat << EOF
+Usage: setup.sh [args] [-- extra command]
+
+Options:
+  -d  --dry-run   Enable dry run mode; no system change occurs. Implies -nr
+  -h  --help      Prints this help page
+  -kh --keep-hdmi Keeps HDMI enabled, default is to disable (Raspbian)
+  -nr --no-reboot Disable rebooting at the end
+  -ng --no-go     Disable installing Go toolchain
+
+Commands:
+EOF
+
+  for i in $(grep "^function do_" "$0" | cut -f 2 -d ' '); do
+    echo -n "  "
+    bash "$0" --banner-only $i | cut -c 3-
+  done
+
+  cat << EOF
+
+By default 'do_all' is run and the host is rebooted afterward. In this case, a
+command line can be supplied after '--', it'll be run before rebooting the
+host.
+EOF
+}
+
+
+# Default actions.
+ACTION_GO=1
+ACTION_REBOOT=1
+BANNER_ONLY=0
+DRY_RUN=0
+KEEP_HDMI=0
+
+
+while [ $# -gt 0 ]; do
+  # Consume the argument and switch on it.
+  arg="$1"
+  shift
+  case "$arg" in
+  # Arguments
+  "--banner-only")  # Undocumented
+    BANNER_ONLY=1
+    ;;
+  "-d" | "--dry-run")
+    echo "-> Dry run mode"
+    DRY_RUN=1
+    ACTION_REBOOT=0
+    ;;
+  "-kh" | "--keep-hdmi")
+    echo "-> Keep HDMI enabled"
+    KEEP_HDMI=1
+    ;;
+  "-nr" | "--no-reboot")
+    echo "-> No reboot"
+    ACTION_REBOOT=0
+    ;;
+  "-ng" | "--no-go")
+    echo "-> Skip installing Go"
+    ACTION_GO=0
+    ;;
+  "-h" | "--help")
+    show_help
+    exit 1
+    ;;
+
+  # Commands
+  do_*)
+    detect_board
+    $arg $@
+    exit 0
+    ;;
+
+  "--")
+    do_all
+    if [ $# -gt 0 ]; then
+      echo "-> Running custom command $*"
+      run $@
+    fi
+    conditional_reboot
+    exit 0
+    ;;
+
+  *)
+    show_help
+    echo ""
+    echo "Unknown argument $arg"
+    exit 2
+    ;;
+  esac
+done
+
+
 do_all
+if [ $# -gt 0 ]; then
+  echo "-> Running custom command $*"
+  run $@
+fi
+conditional_reboot
