@@ -246,6 +246,15 @@ function do_apt {
 }
 
 
+function do_bash_history {
+  echo "- do_bash_history: Injects into .bash_history commands the user may want"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # TODO(maruel): We want this to happen as the expected user.
+  echo "tail -f /var/log/firstboot.log" >> ~/.bash_history
+}
+
+
 function do_timezone {
   echo "- do_timezone: Changes the timezone to America/Toronto"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
@@ -284,7 +293,7 @@ function do_ssh {
 }
 
 
-function do_golang_compile() {
+function do_golang_compile {
   echo "- do_golang_compile: Compiles the latest Go toolchain locally WARNING: untested"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
@@ -380,7 +389,7 @@ EOF
 
 
 function do_unattended_upgrade {
-  echo "- do_unattended_upgrade: Enables automatic nightly OS update"
+  echo "- do_unattended_upgrade: Enables automatic nightly apt update & upgrade"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   # Enable automatic reboot when necessary. We do not want unsafe devices! This
