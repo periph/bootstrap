@@ -181,6 +181,7 @@ EOF
   # Use the us keyboard layout.
   run sudo sed -i 's/XKBLAYOUT="gb"/XKBLAYOUT="us"/' /etc/default/keyboard
   # Fix Wifi country settings for Canada.
+  # TODO(maruel): Make country configurable.
   run sudo raspi-config nonint do_wifi_country CA
 
   # Switch to en_US.
@@ -283,19 +284,72 @@ function do_ssh {
 }
 
 
+function do_golang_compile() {
+  echo "- do_golang_compile: Compiles the latest Go toolchain locally WARNING: untested"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # Build the Go toolchain locally. Bootstrapping is done via the Go debian
+  # package. It is old but recent enough to be used to build a recent version.
+  #
+  # This is necessary on platforms like Armbian on A64 that does not have 32
+  # bits userland support.
+  # ~/go1.4 is the default GOROOT_BOOTSTRAP value.
+
+  if [ ! -d ~/golang ]; then
+    run git clone https://go.googlesource.com/go ~/golang
+    run cd ~/golang
+  else
+    run cd ~/golang
+    run git fetch
+  fi
+  run git checkout "$(git tag | grep "^go" | egrep -v "beta|rc" | tail -n 1)"
+  run cd ./src
+
+  if [ -d ~/go1.4 ]; then
+    # TODO(maruel): Use GOROOT_FINAL=/usr/local/go ?
+    GOROOT_BOOTSTRAP=~/go1.4 run ./make.bash
+  elif [ -d /usr/local/go ]; then
+    # TODO(maruel): Copy to ~/go1.4 and then /usr/local/go ?
+    GOROOT_BOOTSTRAP=/usr/local/go run ./make.bash
+  else
+    # Temporarily install the golang debian package.
+    run sudo apt install -y golang
+    # TODO(maruel): Use GOROOT_FINAL=/usr/local/go ?
+    GOROOT_BOOTSTRAP=/usr/lib/go run ./make.bash
+    # Remove the outdated system version.
+    run sudo apt remove -y golang
+    # Copy itself to a backup so the next upgrade is from a more recent version.
+    run cp -a ~/golang ~/go1.4
+  fi
+}
+
+
 function do_golang {
   echo "- do_golang: Install latest Go toolchain"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  # Magically figuring out latest version
-  GO_ARCH=$(dpkg --print-architecture)
+  local GO_ARCH=$(dpkg --print-architecture)
   if [ $GO_ARCH = armhf ]; then
     GO_ARCH=armv6l
   fi
-  GO_OS_NAME=linux
+  local GO_OS_NAME=linux
+
+  if [ "$(getconf LONG_BIT)" == "64" ]; then
+    if [ $GO_ARCH == "arm" ]; then
+      echo "  Falling back to local go toolchain compilation"
+      do_golang_compile
+      return 0
+    fi
+  fi
+
+  # Magically figure out latest version for precompiled binaries.
   echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME}"
   URL=`curl -sS https://golang.org/dl/ | grep -Po "https://storage\.googleapis\.com/golang/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
   FILENAME=`echo ${URL} | cut -d / -f 5`
+
+  # TODO(maruel): If current == new, skip. This permits running this script
+  # nightly.
+  # local CURRENT=$(go version | cut -f 3 -d ' ' | cut -c 3-)
 
   # The non-guesswork version:
   #BASE_URL=https://storage.googleapis.com/golang/
