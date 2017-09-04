@@ -245,6 +245,16 @@ function do_apt {
 }
 
 
+function do_timezone {
+  echo "- do_timezone: Changes the timezone to America/Toronto"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # Use "timedatectl list-timezones" to list the values.
+  # TODO(maruel): Make timezone configurable.
+  sudo timedatectl set-timezone America/Toronto
+}
+
+
 function do_ssh {
   echo "- do_ssh: Enable passwordless ssh"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
@@ -315,8 +325,8 @@ EOF
 }
 
 
-function do_setup_unattended_upgrade {
-  echo "- do_setup_unattended_upgrade: Enables automatic nightly OS update"
+function do_unattended_upgrade {
+  echo "- do_unattended_upgrade: Enables automatic nightly OS update"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   # Enable automatic reboot when necessary. We do not want unsafe devices! This
@@ -415,8 +425,9 @@ function do_all {
     # TODO(maruel): Do not run on C.H.I.P. Pro because of lack of space.
     do_golang
   fi
-  do_setup_unattended_upgrade
+  do_unattended_upgrade
   do_rename_host
+  do_timezone
   do_update_motd
 }
 
@@ -480,7 +491,7 @@ function show_help {
   fi
 
   cat << EOF
-Usage: setup.sh [args] [-- extra command]
+Usage: setup.sh [args] [command] [-- additional script before reboot]
 
 Options:
   -d  --dry-run   Enable dry run mode; no system change occurs. Implies -nr
@@ -494,7 +505,8 @@ EOF
 
   for i in $(grep "^function do_" "$0" | cut -f 2 -d ' '); do
     echo -n "  "
-    bash "$0" --banner-only $i | cut -c 3-
+    LINE=$(bash "$0" --banner-only $i | cut -f 2- -d ':')
+    printf "%-21s %s\\n" "$i" "$LINE"
   done
 
   cat << EOF
