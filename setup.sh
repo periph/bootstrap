@@ -228,8 +228,8 @@ function do_apt {
   #  WARNING: The following packages cannot be authenticated!
   run sudo apt-key update
 
-  run sudo apt-get update
-  run sudo apt-get upgrade -y
+  run sudo DEBIAN_FRONTEND=noninteractive apt-get update
+  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy upgrade
   # If you are space constrained, here's the approximative size:
   # git:                 17.7MB
   # ifstat:               3.3MB
@@ -242,7 +242,7 @@ function do_apt {
   #
   # curl is missing on odroid.
   # Optional: ifstat python sysstat
-  run sudo apt-get install -y curl git ssh tmux unattended-upgrades vim
+  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install curl git ssh tmux unattended-upgrades vim
 }
 
 
