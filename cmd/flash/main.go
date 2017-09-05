@@ -439,7 +439,12 @@ func setupFirstBoot(boot, root string) error {
 		args += " -5"
 	}
 	if len(*sshKey) != 0 {
+		fmt.Printf("- SSH keys\n")
 		args += " -sk /boot/authorized_keys"
+		// This assumes you have properly set your own ssh keys and plan to use them.
+		if err := copyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
+			return err
+		}
 	}
 	if len(*wifiSSID) != 0 {
 		// TODO(maruel): Proper shell escaping.
@@ -448,26 +453,6 @@ func setupFirstBoot(boot, root string) error {
 	content += fmt.Sprintf(rcLocalContent, "/boot", args)
 	log.Printf("Writing %q:\n%s", rcLocal, content)
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
-}
-
-func setupSSH(boot string) error {
-	fmt.Printf("- SSH keys\n")
-	// This assumes you have properly set your own ssh keys and plan to use them.
-	if err := copyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
-		return err
-	}
-
-	// https://www.raspberrypi.org/documentation/remote-access/ssh/
-	if distro == raspbian {
-		f, err := os.Create(filepath.Join(boot, "ssh"))
-		if err != nil {
-			return err
-		}
-		if err = f.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // flash flashes *img to *sdCard.
@@ -550,11 +535,6 @@ func mainAsRoot() error {
 
 	if err = setupFirstBoot(boot, root); err != nil {
 		return err
-	}
-	if len(*sshKey) != 0 {
-		if err = setupSSH(boot); err != nil {
-			return err
-		}
 	}
 	if *forceUART {
 		if err = raspbianEnableUART(boot); err != nil {
