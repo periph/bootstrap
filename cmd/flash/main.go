@@ -632,6 +632,9 @@ func mainAsUser() error {
 		cmd = append(cmd, "--wifi-ssid", *wifiSSID)
 		cmd = append(cmd, "-wifi-pass", *wifiPass)
 	}
+	if *email != "" {
+		cmd = append(cmd, "-email", *email)
+	}
 	if *fiveInches {
 		cmd = append(cmd, "-5inch")
 	}
