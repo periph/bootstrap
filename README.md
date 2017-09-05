@@ -56,7 +56,7 @@ with your email address so you are alerted whenever `apt-get upgrade` runs.
 To install or update in-place your Go toolchain on any computer:
 
 ```
-cuSL https://goo.gl/JcTSsH | bash -s -- do_golang
+curl -sSL https://goo.gl/JcTSsH | bash -s -- do_golang
 ```
 
 
@@ -67,7 +67,7 @@ This renames the host to `<board>-<id>` where `<board>` is one of `beaglebone`,
 serial number or systemd's hostctl 'Machine ID'.
 
 ```
-cuSL https://goo.gl/JcTSsH | bash -s -- do_rename_host
+curl -sSL https://goo.gl/JcTSsH | bash -s -- do_rename_host
 ```
 
 
@@ -76,8 +76,12 @@ cuSL https://goo.gl/JcTSsH | bash -s -- do_rename_host
 To forward all emails sent to `root@localhost` via sendmail, use:
 
 ```
-cuSL https://goo.gl/JcTSsH | bash -s -- --email foo@example.com do_sendmail
+curl -sSL https://goo.gl/JcTSsH | bash -s -- --email foo@example.com do_sendmail
 ```
+
+This one is quite useful, as it also enables automatic email upon
+unattended-upgrade. This permits to know when something wrong happens on the
+worker.
 
 
 ## Modifications
@@ -103,8 +107,23 @@ Here's an incomplete list of modications done by `setup.sh`:
 - Go toolchain is installed in `/usr/local/go`.
   - `/etc/profile.d/golang.sh` is added to set `$PATH` and `$GOPATH`.
 
-To get the full list, run `setup.sh` in dry run mode:
+
+### Dry run
+
+To get the full list of the operations done by default, run `setup.sh` in dry
+run mode on the host itself:
 
 ```
-curl -sSL https://goo.gl/EkANh0 | bash -s -- --dry-run
+curl -sSL https://goo.gl/JcTSsH | bash -s -- --dry-run
+```
+
+
+### Commands list
+
+To get the full list of commands and options available, download the script
+first then run with` `--help`:
+
+```
+curl -sSL https://goo.gl/JcTSsH -o setup.sh
+bash setup.sh --help
 ```
