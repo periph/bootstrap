@@ -83,19 +83,6 @@ network={
   psk="%s"
 }
 `
-const raspbian5inchesDisplay = `
-# Enable support for 800x480 display:
-hdmi_group=2
-hdmi_mode=87
-hdmi_cvt 800 480 60 6 0 0 0
-
-# Enable touchscreen:
-# Not necessary on Jessie Lite since it boots in console mode. :)
-# Some displays use 22, others 25.
-# Enabling this means the SPI bus cannot be used anymore.
-#dtoverlay=ads7846,penirq=22,penirq_pull=2,speed=10000,xohms=150
-`
-
 const raspbianUART = `
 
 # Enable console on UART on RPi3
@@ -112,7 +99,7 @@ const rcLocalContent = `
 
 LOG_FILE=/var/log/firstboot.log
 if [ ! -f $LOG_FILE ]; then
-  /root/firstboot.sh%s 2>&1 | tee $LOG_FILE
+  %s/firstboot.sh%s 2>&1 | tee $LOG_FILE
 fi
 exit 0
 `
@@ -123,7 +110,8 @@ var (
 	email      = flag.String("email", "", "email address to forward root@localhost to")
 	wifiSSID   = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass   = flag.String("wifi-pass", "", "wifi password")
-	fiveInches = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (raspbian only)")
+	fiveInches = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
+	forceUART  = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
 	skipFlash  = flag.Bool("skip-flash", false, "Skip download and flashing, just modify the image")
 	sdCard     = flag.String("sdcard", "", "Path to SD card, generally in the form of /dev/sdX or /dev/mmcblkN")
 	v          = flag.Bool("v", false, "log verbosely")
@@ -403,29 +391,10 @@ func umount(p string) error {
 
 // Editing image code
 
-// raspbianEnable5inches enables non-standard 5" 800x480 display support.
-//
-// Found one at 23$USD with free shipping on aliexpress.
-//
-// https://www.raspberrypi.org/documentation/configuration/config-txt/
-func raspbianEnable5inches(boot string) error {
-	fmt.Printf("- Enabling 5\" display support\n")
-	switch distro {
-	case raspbian:
-		f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND, 0666)
-		if err != nil {
-			return err
-		}
-		if _, err = f.WriteString(raspbian5inchesDisplay); err != nil {
-			return err
-		}
-		return f.Close()
-	default:
-		return fmt.Errorf("don't know how to enable 5\" display support on distro %s", distro)
-	}
-}
-
 // raspbianEnableUART enables console on UART on RPi3.
+//
+// This is only needed when debugging over serial, mainly to debug issues with
+// setup.sh.
 //
 // https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
 func raspbianEnableUART(boot string) error {
@@ -440,11 +409,16 @@ func raspbianEnableUART(boot string) error {
 	return f.Close()
 }
 
-func setupFirstBoot(root string) error {
+func setupFirstBoot(boot, root string) error {
 	fmt.Printf("- First boot setup script\n")
-	if err := copyFile(filepath.Join(root, "root", "firstboot.sh"), "setup.sh", 0755); err != nil {
+	if err := copyFile(filepath.Join(boot, "firstboot.sh"), "setup.sh", 0755); err != nil {
 		return err
 	}
+
+	// TODO(maruel): Edit /etc/rc.local directly in the disk image. Since on
+	// Debian /etc/rc.local is mostly comments, it's likely large enough to be
+	// safely overwritten.
+	// https://github.com/periph/bootstrap/issues/1
 	// Note: To debug firstboot,sh, comment out the following lines, then login
 	// at the console and run the script manually.
 	rcLocal := filepath.Join(root, "etc", "rc.local")
@@ -461,57 +435,25 @@ func setupFirstBoot(root string) error {
 	if len(*email) != 0 {
 		args += " -e " + *email
 	}
-	content += fmt.Sprintf(rcLocalContent, args)
+	if *fiveInches {
+		args += " -5"
+	}
+	if len(*sshKey) != 0 {
+		args += " -sk /boot/authorized_keys"
+	}
+	if len(*wifiSSID) != 0 {
+		// TODO(maruel): Proper shell escaping.
+		args += fmt.Sprintf(" -ws %q -wp %q", *wifiSSID, *wifiPass)
+	}
+	content += fmt.Sprintf(rcLocalContent, "/boot", args)
 	log.Printf("Writing %q:\n%s", rcLocal, content)
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
 }
 
-func setupSSH(root, boot string) error {
+func setupSSH(boot string) error {
 	fmt.Printf("- SSH keys\n")
 	// This assumes you have properly set your own ssh keys and plan to use them.
-	home := filepath.Join(root, "home", userMap[distro])
-	sshDir := filepath.Join(home, ".ssh")
-	if _, err := os.Stat(sshDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(sshDir, 0755); err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	}
-	if err := copyFile(filepath.Join(sshDir, "authorized_keys"), *sshKey, 0644); err != nil {
-		return err
-	}
-	// It is possible the user account does not exist at all as some distros
-	// (armbian, odroid's ubuntu minimal) do not include a default user.
-	// Inconditionally update the ownership.
-	// On all (?) distros, the first user is 1000. This is at least true on
-	// Raspbian and NextThing's Debian distro.
-	if err := chownRecursive(home, 1000, 1000); err != nil {
-		return err
-	}
-
-	// Force key based authentication since the password is known.
-	// This could be done in setup.sh but doing so would mean that the device
-	// would have a window where it would be vulnerable to ssh with default
-	// credentials. Doing it here means that even the bootstrapping phase is
-	// secure.
-	//
-	// This is annoying for distros without a default user account, which is
-	// created a bit later in setup.sh. In this case it is impossible to ssh in
-	// until the account is created, as ssh as root is disabled.
-	p := filepath.Join(root, "etc", "ssh", "sshd_config")
-	content, err := ioutil.ReadFile(p)
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(string(content), "\n")
-	for i, line := range lines {
-		if line == "#PasswordAuthentication yes" {
-			lines[i] = "PasswordAuthentication no"
-			break
-		}
-	}
-	if err := ioutil.WriteFile(p, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+	if err := copyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
 		return err
 	}
 
@@ -526,18 +468,6 @@ func setupSSH(root, boot string) error {
 		}
 	}
 	return nil
-}
-
-func setupWifi(root string) error {
-	fmt.Printf("- Wifi")
-	f, err := os.OpenFile(filepath.Join(root, "etc", "wpa_supplicant", "wpa_supplicant.conf"), os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.WriteString(fmt.Sprintf(wpaSupplicant, *wifiSSID, *wifiPass)); err != nil {
-		return err
-	}
-	return f.Close()
 }
 
 // flash flashes *img to *sdCard.
@@ -618,33 +548,15 @@ func mainAsRoot() error {
 		return errors.New("flash() is not implemented on this OS")
 	}
 
-	// TODO(maruel): Figure out a way to only edit 'boot' and not 'root', so that
-	// it could be easily done on any platform. An option is to put the script on
-	// the boot (FAT16) partition and find a way to run it from within linux,
-	// like by editing /etc/rc.local directly in the disk image. Since on Debian
-	// /etc/rc.local is mostly comments, it's likely large enough to be safely
-	// overwritten.
-	// https://github.com/periph/bootstrap/issues/1
-	if err = setupFirstBoot(root); err != nil {
+	if err = setupFirstBoot(boot, root); err != nil {
 		return err
 	}
-	if *fiveInches {
-		if err = raspbianEnable5inches(boot); err != nil {
-			return err
-		}
-	}
 	if len(*sshKey) != 0 {
-		if err = setupSSH(root, boot); err != nil {
+		if err = setupSSH(boot); err != nil {
 			return err
 		}
 	}
-	if len(*wifiSSID) != 0 {
-		if err = setupWifi(root); err != nil {
-			return err
-		}
-	}
-	if distro == raspbian {
-		// TODO(maruel): Make this optional.
+	if *forceUART {
 		if err = raspbianEnableUART(boot); err != nil {
 			return err
 		}
@@ -718,8 +630,6 @@ func mainAsUser() error {
 	// Propagate optional flags.
 	if *wifiSSID != "" {
 		cmd = append(cmd, "--wifi-ssid", *wifiSSID)
-	}
-	if *wifiPass != "" {
 		cmd = append(cmd, "-wifi-pass", *wifiPass)
 	}
 	if *fiveInches {
@@ -727,6 +637,9 @@ func mainAsUser() error {
 	}
 	if *skipFlash {
 		cmd = append(cmd, "-skip-flash")
+	}
+	if *forceUART {
+		cmd = append(cmd, "-forceuart")
 	}
 	if *v {
 		cmd = append(cmd, "-v")
@@ -750,6 +663,17 @@ func mainImpl() error {
 	}
 	if distro == "" {
 		return errors.New("-distro is required")
+	}
+	if (*wifiSSID != "") != (*wifiPass != "") {
+		return errors.New("use both --wifi-ssid and --wifi-pass")
+	}
+	if distro != raspbian {
+		if *fiveInches {
+			return errors.New("-5inch only make sense with -distro raspbian")
+		}
+		if *forceUART {
+			return errors.New("-forceuart only make sense with -distro raspbian")
+		}
 	}
 	if *asRoot {
 		return mainAsRoot()
