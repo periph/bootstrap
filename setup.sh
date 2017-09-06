@@ -61,9 +61,6 @@ function do_beaglebone {
 # Change made by https://github.com/periph/bootstrap
 cape_enable=bone_capemgr.enable_partno=BB-SPIDEV0
 EOF
-
-  # TODO(maruel): Setup wifi.
-  #   - sudo connmanctl services; sudo connmanctl connect wifi...
 }
 
 
@@ -211,9 +208,8 @@ EOF
 
   # Use the us keyboard layout.
   run sudo sed -i 's/XKBLAYOUT="gb"/XKBLAYOUT="us"/' /etc/default/keyboard
-  # Fix Wifi country settings for Canada.
-  # TODO(maruel): Make country configurable.
-  run sudo raspi-config nonint do_wifi_country CA
+  # Fix Wifi country settings.
+  run sudo raspi-config nonint do_wifi_country $COUNTRY
 
   # Switch to en_US.
   run sudo sed -i 's/en_GB/en_US/' /etc/locale.gen
@@ -280,9 +276,7 @@ function do_timezone {
   echo "- do_timezone: Changes the timezone to America/Toronto"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  # Use "timedatectl list-timezones" to list the values.
-  # TODO(maruel): Make timezone configurable.
-  sudo timedatectl set-timezone America/Toronto
+  sudo timedatectl set-timezone $TIMEZONE
 }
 
 
@@ -562,12 +556,14 @@ function do_wifi {
   echo "- do_wifi: Configures wifi"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
+  # TODO(maruel): On Beaglebone, use:
+  #   sudo connmanctl services; sudo connmanctl connect wifi...
   if (which nmcli > /dev/null); then
     run nmcli device wifi list
     run sudo nmcli device wifi connect "$WIFI_SSID" password "$WIFI_PASS" ifname wlan0
   else
     run sudo tee /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null <<EOF
-country=CA
+country=$COUNTRY
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 network={
@@ -575,7 +571,6 @@ network={
   psk="${WIFI_PASS}"
 }
 EOF
-    # TODO(maruel): Wake up wpa_supplicant.
   fi
 }
 
@@ -706,16 +701,19 @@ function show_help {
 Usage: setup.sh [args] [command] [-- additional script before reboot]
 
 Options:
-  -d  --dry-run      Enable dry run mode; no system change occurs. Implies -nr
-  -h  --help         Prints this help page
-  -5  --5inch        Enables 5" HDMI 800x480 display support (Raspbian)
-  -sk --ssh-key      SSH authorized_keys to copy to the home user directory
-  -kh --keep-hdmi    Keeps HDMI enabled, default is to disable (Raspbian)
-  -nr --no-reboot    Disable rebooting at the end
-  -ng --no-go        Disable installing Go toolchain
-  -e  --email <addr> Email address to forward all root@localhost to
-  -ws --wifi-ssid <ssid> SSID to connect to
-  -wp --wifi-pass <pwd>  Password to use for Wifi
+  -h  --help           Prints this help page
+  -d  --dry-run        Enable dry run mode; no system change occurs. Implies -nr
+
+  -5  --5inch          Enables 5" HDMI 800x480 display support (Raspbian)
+  -c  --country XXX    Country for Wifi settings; default $COUNTRY
+  -e  --email XXX      Email address to forward all root@localhost to
+  -kh --keep-hdmi      Keeps HDMI enabled, default is to disable (Raspbian)
+  -nr --no-reboot      Disable rebooting at the end
+  -ng --no-go          Disable installing Go toolchain
+  -sk --ssh-key FILE   SSH authorized_keys to copy to the home user directory
+  -t  --timezone XXX   Timezone to use; default: $TIMEZONE
+  -ws --wifi-ssid SSID SSID to connect to
+  -wp --wifi-pass PWD  Password to use for Wifi
 
 Commands:
 EOF
@@ -748,6 +746,9 @@ DRY_RUN=0
 KEEP_HDMI=0
 DEST_EMAIL=""
 SSH_KEY=""
+COUNTRY="CA"
+# Use "timedatectl list-timezones" to list the values.
+TIMEZONE="UTC"
 WIFI_SSID=""
 WIFI_PASS=""
 
@@ -763,6 +764,11 @@ while [ $# -gt 0 ]; do
     ;;
   "-5" | "--5inch")
     ACTION_5INCH=1
+    ;;
+  "-c" | "--country")
+    COUNTRY=$1
+    # TODO(maruel): Verify is not empty.
+    shift
     ;;
   "-d" | "--dry-run")
     echo "-> Dry run mode"
@@ -796,6 +802,11 @@ while [ $# -gt 0 ]; do
     if [ ! -f $SSH_KEY ]; then
       echo "Error: $SSH_KEY is not a file"
     fi
+    shift
+    ;;
+  "-t" | "--timezone")
+    TIMEZONE=$1
+    # TODO(maruel): Verify is not empty.
     shift
     ;;
   "-ws" | "--wifi-ssid")
