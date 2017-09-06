@@ -748,7 +748,7 @@ DEST_EMAIL=""
 SSH_KEY=""
 COUNTRY="CA"
 # Use "timedatectl list-timezones" to list the values.
-TIMEZONE="UTC"
+TIMEZONE="Etc/UTC"
 WIFI_SSID=""
 WIFI_PASS=""
 

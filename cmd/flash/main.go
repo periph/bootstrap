@@ -105,16 +105,17 @@ exit 0
 `
 
 var (
-	distro     Distro
-	sshKey     = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
-	email      = flag.String("email", "", "email address to forward root@localhost to")
-	wifiSSID   = flag.String("wifi-ssid", "", "wifi ssid")
-	wifiPass   = flag.String("wifi-pass", "", "wifi password")
-	fiveInches = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
-	forceUART  = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
-	skipFlash  = flag.Bool("skip-flash", false, "Skip download and flashing, just modify the image")
-	sdCard     = flag.String("sdcard", "", "Path to SD card, generally in the form of /dev/sdX or /dev/mmcblkN")
-	v          = flag.Bool("v", false, "log verbosely")
+	distro       Distro
+	sshKey       = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
+	email        = flag.String("email", "", "email address to forward root@localhost to")
+	wifiSSID     = flag.String("wifi-ssid", "", "wifi ssid")
+	wifiPass     = flag.String("wifi-pass", "", "wifi password")
+	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
+	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
+	skipFlash    = flag.Bool("skip-flash", false, "Skip download and flashing, just modify the image")
+	sdCard       = flag.String("sdcard", "", "Path to SD card, generally in the form of /dev/sdX or /dev/mmcblkN")
+	timeLocation = flag.String("time", getTimeLocation(), "Location to use to define time")
+	v            = flag.Bool("v", false, "log verbosely")
 	// Internal flags.
 	asRoot = flag.Bool("as-root", false, "")
 	img    = flag.String("img", "", "")
@@ -171,6 +172,24 @@ func chownRecursive(path string, uid, gid int) error {
 		}
 		return err
 	})
+}
+
+func getTimeLocation() string {
+	// OSX and Ubuntu
+	if d, _ := os.Readlink("/etc/localtime"); len(d) != 0 {
+		const p = "/usr/share/zoneinfo/"
+		if strings.HasPrefix(d, p) {
+			return d[len(p):]
+		}
+	}
+	// systemd
+	if d, _ := exec.Command("timedatectl").Output(); len(d) != 0 {
+		re := regexp.MustCompile(`(?m)Time zone\: ([^\s]+)`)
+		if match := re.FindSubmatch(d); len(match) != 0 {
+			return string(match[1])
+		}
+	}
+	return "Etc/UTC"
 }
 
 // Image fetching
@@ -431,7 +450,7 @@ func setupFirstBoot(boot, root string) error {
 	// the partition on first boot.
 	content := strings.TrimRightFunc(string(b), unicode.IsSpace)
 	content = strings.TrimSuffix(content, "exit 0")
-	args := ""
+	args := " -t " + *timeLocation
 	if len(*email) != 0 {
 		args += " -e " + *email
 	}
@@ -606,7 +625,10 @@ func mainAsUser() error {
 	if err != nil {
 		return err
 	}
-	cmd := []string{execname, "-as-root", "-distro", string(distro), "-ssh-key", *sshKey, "-img", imgname}
+	cmd := []string{
+		execname, "-as-root", "-distro", string(distro), "-ssh-key", *sshKey,
+		"-img", imgname, "-time", *timeLocation,
+	}
 	// Propagate optional flags.
 	if *wifiSSID != "" {
 		cmd = append(cmd, "--wifi-ssid", *wifiSSID)
