@@ -74,15 +74,6 @@ var hostMap = map[Distro]string{
 	raspbian: "raspberrypi",
 }
 
-const wpaSupplicant = `
-country=CA
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-network={
-  ssid="%s"
-  psk="%s"
-}
-`
 const raspbianUART = `
 
 # Enable console on UART on RPi3
@@ -108,13 +99,13 @@ var (
 	distro       Distro
 	sshKey       = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
+	wifiCountry  = flag.String("wifi-country", "CA", "Country setting for Wifi; affect usable bands")
 	wifiSSID     = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass     = flag.String("wifi-pass", "", "wifi password")
 	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
 	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
 	skipFlash    = flag.Bool("skip-flash", false, "Skip download and flashing, just modify the image")
 	sdCard       = flag.String("sdcard", "", "Path to SD card, generally in the form of /dev/sdX or /dev/mmcblkN")
-	country      = flag.String("country", "CA", "Country setting for Wifi; affect usable bands")
 	timeLocation = flag.String("time", getTimeLocation(), "Location to use to define time")
 	v            = flag.Bool("v", false, "log verbosely")
 	// Internal flags.
@@ -451,7 +442,7 @@ func setupFirstBoot(boot, root string) error {
 	// the partition on first boot.
 	content := strings.TrimRightFunc(string(b), unicode.IsSpace)
 	content = strings.TrimSuffix(content, "exit 0")
-	args := " -t " + *timeLocation + " -c " + *country
+	args := " -t " + *timeLocation + " -wc " + *wifiCountry
 	if len(*email) != 0 {
 		args += " -e " + *email
 	}
@@ -628,7 +619,7 @@ func mainAsUser() error {
 	}
 	cmd := []string{
 		execname, "-as-root", "-distro", string(distro), "-ssh-key", *sshKey,
-		"-img", imgname, "-country", *country, "-time", *timeLocation,
+		"-img", imgname, "-wifi-country", *wifiCountry, "-time", *timeLocation,
 	}
 	// Propagate optional flags.
 	if *wifiSSID != "" {
