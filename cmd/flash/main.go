@@ -419,7 +419,7 @@ func umount(p string) error {
 // https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
 func raspbianEnableUART(boot string) error {
 	fmt.Printf("- Enabling console on UART on RPi3\n")
-	f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND, 0666)
+	f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
 		return err
 	}

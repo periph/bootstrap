@@ -35,6 +35,15 @@ flash --distro raspbian --wifi <ssid> <pwd> /dev/sdh
 `flash` takes care of all the steps below on the micro computer's initial boot.
 
 
+### Enabling UART
+
+On a Raspberry Pi 3, the console UART is not enabled by default anymore. Specify
+`-forceuart` to enable it, then use a serial cable (like
+[FT232RL](https://www.adafruit.com/product/70) to connect the serial pins to
+pins 8 and 10 on the header. Then run `screen /dev/ttyUSB0 115200` on your linux
+host to connect (or equivalent on other OSes).
+
+
 ## Configuring a micro computer
 
 `setup.sh` is an all-in-one tool that can be used on an already flashed device,
