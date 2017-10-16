@@ -535,6 +535,11 @@ function do_wifi {
 
   # First set the Country. This is important since it affects which wifi bands
   # and power limits can be used.
+  if [ "$WIFI_COUNTRY" == "" ]; then
+    echo "- Guessing country (will only work if wired network)"
+    WIFI_COUNTRY="$(curl -fsSL http://ipinfo.io/country 2>/dev/null || true)"
+    echo "  Guessed country as \"$WIFI_COUNTRY\""
+  fi
   if [ "$WIFI_COUNTRY" != "" ]; then
     if [ $BOARD = raspberrypi ]; then
       # Raspbian.
@@ -805,7 +810,8 @@ Options:
   -ng --no-go            Disable installing Go toolchain
   -sk --ssh-key FILE     SSH authorized_keys to copy to the home user directory
   -t  --timezone XXX     Timezone to use; default: $TIMEZONE
-  -wc --wifi-country XXX Country for Wifi settings; default $WIFI_COUNTRY
+  -wc --wifi-country XXX Country for Wifi settings; if unset, try to guess it
+                         but requires ethernet/USB network first
   -ws --wifi-ssid SSID   SSID to connect to
   -wp --wifi-pass PWD    Password to use for Wifi
 

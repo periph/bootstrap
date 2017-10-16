@@ -99,7 +99,7 @@ var (
 	distro       Distro
 	sshKey       = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
-	wifiCountry  = flag.String("wifi-country", "CA", "Country setting for Wifi; affect usable bands")
+	wifiCountry  = flag.String("wifi-country", getCountry(), "Country setting for Wifi; affect usable bands")
 	wifiSSID     = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass     = flag.String("wifi-pass", "", "wifi password")
 	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
@@ -182,6 +182,21 @@ func getTimeLocation() string {
 		}
 	}
 	return "Etc/UTC"
+}
+
+func getCountry() string {
+	// WARNING: This causes an outgoing HTTP request. Please specify
+	// -wifi-country if you are not confortable with this.
+	resp, err := http.DefaultClient.Get("http://ipinfo.io/country")
+	if err != nil {
+		return ""
+	}
+	b, err := ioutil.ReadAll(resp.Body)
+	err2 := resp.Body.Close()
+	if err != nil || err2 != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // Image fetching
