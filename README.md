@@ -17,6 +17,9 @@ for portability:
 
 - `cmd/flash`: Downloads an image, flashes it to an SD card and modifies it to
   run `setup.sh` upon the first boot. It only runs on linux.
+- `cmd/flash-docker`: Downloads an image, modifies a copy to
+  run `setup.sh` upon the first boot then optionally flashes it to an SD card.
+  It requires docker to be installed.
 - `cmd/find-host`: Looks for devices on the local network through mDNS. Note
   that Raspbian Stretch doesn't advertize anymore.
 
@@ -33,6 +36,9 @@ flash -manufacturer raspberrypi --wifi <ssid> <pwd> /dev/sdh
 ```
 
 `flash` takes care of all the steps below on the micro computer's initial boot.
+
+`flash-docker` works by first modifying a copy of the image and only then flash
+it. It may be possible to make to work on OSX and Windows.
 
 
 ### Enabling UART
