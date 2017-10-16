@@ -20,6 +20,8 @@ for portability:
 - `cmd/flash-docker`: Downloads an image, modifies a copy to
   run `setup.sh` upon the first boot then optionally flashes it to an SD card.
   It requires docker to be installed.
+- `cmd/flash-exp` enables flashing on any OS by editing the parititon directly.
+  This is currently experimental but the best option on other OSes than linux.
 - `cmd/find-host`: Looks for devices on the local network through mDNS. Note
   that Raspbian Stretch doesn't advertize anymore.
 

@@ -2,11 +2,12 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// flash-docker fetches an image, modifies it using Docker then flashes it to
-// an SDCard, to bootstrap automatically.
-package main // import "periph.io/x/bootstrap/cmd/flash-docker"
+// flash-exp fetches an image, modifies it then flashes it to an SDCard, to
+// bootstrap automatically.
+package main // import "periph.io/x/bootstrap/cmd/flash-exp"
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,16 +16,25 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
-	"unicode"
 
+	"github.com/maruel/go-fs"
+	"github.com/maruel/go-fs/fat"
 	"github.com/rekby/mbr"
 	"periph.io/x/bootstrap/img"
 )
 
+// oldRcLocal is the start of /etc/rc.local as found on Debian derived
+// distributions.
+//
+// The comments are essentially the free space available to edit the file
+// without having to understand EXT4. :)
+const oldRcLocal = "#!/bin/sh -e\n#\n# rc.local\n#\n# This script is executed at the end of each multiuser runlevel.\n# Make sure that the script will \"exit 0\" on success or any other\n# value on error.\n#\n# In order to enable or disable this script just change the execution\n# bits.\n#\n# By default this script does nothing.\n"
+
+// denseRcLocal is a 'dense' version of img.RcLocalContent.
+const denseRcLocal = "#!/bin/sh -e\nL=/var/log/firstboot.log;if [ ! -f $L ];then /boot/firstboot.sh%s 2>&1|tee $L;fi\n#"
+
 var (
 	distro       img.Distro
-	container    = flag.String("container", "ubuntu:16.04", "container from docker hub to use")
 	sshKey       = flag.String("ssh-key", img.FindPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
 	wifiCountry  = flag.String("wifi-country", img.GetCountry(), "Country setting for Wifi; affect usable bands")
@@ -45,19 +55,6 @@ func init() {
 
 // Utils
 
-func docker(imgpath string, lbaStart uint32, in string, arg string) (string, error) {
-	args := []string{
-		"run", "-i", "--rm", "--privileged",
-		"-v", filepath.Dir(imgpath) + ":/work", *container,
-		"/bin/bash", "-c", fmt.Sprintf("mount -o loop,offset=%d /work/%s /mnt ; %s", lbaStart*512, filepath.Base(imgpath), arg),
-	}
-	out, err := img.Capture(in, "docker", args...)
-	if err != nil {
-		return "", fmt.Errorf("Failed to run: docker %s:\n%s\n", strings.Join(args, " "), out)
-	}
-	return out, err
-}
-
 func writeToFile(dst io.Writer, src string) error {
 	fs, err := os.Open(src)
 	if err != nil {
@@ -76,58 +73,123 @@ func writeToFile(dst io.Writer, src string) error {
 // setup.sh.
 //
 // https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
-func raspbianEnableUART(imgpath string, lbaStart uint32) error {
+func raspbianEnableUART(boot fs.Directory) error {
 	fmt.Printf("- Enabling console on UART on RPi3\n")
-	if _, err := docker(imgpath, lbaStart, img.RaspberryPi3UART, "cat >> /mnt/config.txt"); err != nil {
+	s, err := boot.AddFile("config.txt")
+	if err != nil {
 		return err
 	}
-	return nil
+	s2, err := s.File()
+	if err != nil {
+		return err
+	}
+	b, err := ioutil.ReadAll(s2)
+	if err != nil {
+		return err
+	}
+	_, err = s2.Write(append(b, []byte(img.RaspberryPi3UART)...))
+	return err
 }
 
-func modifyImage(imgname string) error {
-	imgpath, err := filepath.Abs(imgname)
+func modifyImage(img string) error {
+	fmt.Printf("- Modifying image %s\n", img)
+	f, err := os.OpenFile(img, os.O_RDWR, 0666)
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(imgpath)
-	if err != nil {
-		return err
+	err = modifyImageInner(f)
+	err2 := f.Close()
+	if err == nil {
+		return err2
 	}
+	return err
+}
+
+type fileDisk struct {
+	f    *os.File
+	off  int64
+	size int64
+}
+
+func (f *fileDisk) Close() error {
+	return errors.New("abstraction layer error")
+}
+
+func (f *fileDisk) Len() int64 {
+	return f.size
+}
+
+func (f *fileDisk) ReadAt(p []byte, off int64) (int, error) {
+	if off+f.off+int64(len(p)) > f.size {
+		return 0, io.EOF
+	}
+	return f.f.ReadAt(p, off+f.off)
+}
+
+func (f *fileDisk) SectorSize() int {
+	return 512
+}
+
+func (f *fileDisk) WriteAt(p []byte, off int64) (int, error) {
+	if off+f.off+int64(len(p)) > f.size {
+		return 0, errors.New("overflow")
+	}
+	return f.f.WriteAt(p, off+f.off)
+}
+
+func modifyImageInner(f *os.File) error {
 	m, err := mbr.Read(f)
 	if err != nil {
-		f.Close()
 		return nil
 	}
 	if err = m.Check(); err != nil {
-		f.Close()
 		return err
 	}
-	lbaBoot := m.GetPartition(1).GetLBAStart()
-	lbaRoot := m.GetPartition(2).GetLBAStart()
-	if err = f.Close(); err != nil {
+	boot := m.GetPartition(1)
+	d := &fileDisk{f, int64(boot.GetLBAStart() * 512), int64(boot.GetLBALen() * 512)}
+	filesys, err := fat.New(d)
+	if err != nil {
 		return err
 	}
-	if err := modifyBoot(imgpath, lbaBoot); err != nil {
+	rootDir, err := filesys.RootDir()
+	if err != nil {
 		return err
 	}
-	return modifyRoot(imgpath, lbaRoot)
+	if err = modifyBoot(rootDir); err != nil {
+		return err
+	}
+	root := m.GetPartition(2)
+	d = &fileDisk{f, int64(root.GetLBAStart() * 512), int64(root.GetLBALen() * 512)}
+	return modifyRoot(d)
 }
 
-func modifyBoot(imgpath string, lbaStart uint32) error {
-	if _, err := docker(imgpath, lbaStart, "", "cp /work/setup.sh /mnt/firstboot.sh"); err != nil {
+func modifyBoot(boot fs.Directory) error {
+	s, err := boot.AddFile("firstboot.sh")
+	if err != nil {
+		return err
+	}
+	s2, err := s.File()
+	if err != nil {
+		return err
+	}
+	if err = writeToFile(s2, "setup.sh"); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
-		b, err := ioutil.ReadFile(*sshKey)
+		s, err = boot.AddFile("authorized_keys")
 		if err != nil {
 			return err
 		}
-		if _, err := docker(imgpath, lbaStart, string(b), "cat > /mnt/authorized_keys"); err != nil {
+		s2, err = s.File()
+		if err != nil {
+			return err
+		}
+		if err = writeToFile(s2, *sshKey); err != nil {
 			return err
 		}
 	}
 	if *forceUART {
-		if err := raspbianEnableUART(imgpath, lbaStart); err != nil {
+		if err = raspbianEnableUART(boot); err != nil {
 			return err
 		}
 	}
@@ -156,19 +218,35 @@ func firstBootArgs() string {
 	return args
 }
 
-func modifyRoot(imgpath string, lbaStart uint32) error {
-	content, err := docker(imgpath, lbaStart, "", "cat /mnt/etc/rc.local")
-	if err != nil {
-		return err
+// modifyRoot edits the root partition manually.
+//
+// Since on Debian /etc/rc.local is mostly comments, it's large enough to be
+// safely overwritten.
+func modifyRoot(root *fileDisk) error {
+	// https://github.com/periph/bootstrap/issues/1
+	offset := int64(0)
+	prefix := []byte(oldRcLocal)
+	buf := make([]byte, 512)
+	for ; ; offset += 512 {
+		_, err := root.ReadAt(buf, offset)
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(buf[:len(prefix)], prefix) {
+			log.Printf("found /etc/rc.local at offset %d", offset)
+			break
+		}
+		if offset == 190275584 {
+			log.Printf("%q", string(buf[:len(prefix)]))
+			log.Printf("%q", string(prefix))
+		}
 	}
-	// Keep the content of the file, trim the "exit 0" at the end. It is
-	// important to keep its content since some distros (odroid) use it to resize
-	// the partition on first boot.
-	content = strings.TrimRightFunc(content, unicode.IsSpace)
-	content = strings.TrimSuffix(content, "exit 0")
-	content += fmt.Sprintf(img.RcLocalContent, firstBootArgs())
-	log.Printf("Writing /etc/rc.local:\n%s", content)
-	_, err = docker(imgpath, lbaStart, content, "cat > /mnt/etc/rc.local")
+	// TODO(maruel): Keep everything before the "exit 0" before our injected
+	// lines.
+	content := fmt.Sprintf(denseRcLocal, firstBootArgs())
+	copy(buf, content)
+	log.Printf("Writing /etc/rc.local:\n%s", buf)
+	_, err := root.WriteAt(buf, offset)
 	return err
 }
 
@@ -237,7 +315,7 @@ func mainImpl() error {
 
 func main() {
 	if err := mainImpl(); err != nil {
-		fmt.Fprintf(os.Stderr, "\nflash-docker: %s.\n", err)
+		fmt.Fprintf(os.Stderr, "\nflash-exp: %s.\n", err)
 		os.Exit(1)
 	}
 }

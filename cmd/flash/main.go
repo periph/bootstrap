@@ -127,6 +127,28 @@ func raspbianEnableUART(boot string) error {
 	return f.Close()
 }
 
+func firstBootArgs() string {
+	args := " -t " + *timeLocation + " -wc " + *wifiCountry
+	if len(*email) != 0 {
+		args += " -e " + *email
+	}
+	if *fiveInches {
+		args += " -5"
+	}
+	if len(*sshKey) != 0 {
+		args += " -sk /boot/authorized_keys"
+	}
+	if len(*wifiSSID) != 0 {
+		// TODO(maruel): Proper shell escaping.
+		args += fmt.Sprintf(" -ws %q", *wifiSSID)
+	}
+	if len(*wifiPass) != 0 {
+		// TODO(maruel): Proper shell escaping.
+		args += fmt.Sprintf(" -wp %q", *wifiSSID, *wifiPass)
+	}
+	return args
+}
+
 func setupFirstBoot(boot, root string) error {
 	fmt.Printf("- First boot setup script\n")
 	if err := img.CopyFile(filepath.Join(boot, "firstboot.sh"), "setup.sh", 0755); err != nil {
@@ -149,26 +171,14 @@ func setupFirstBoot(boot, root string) error {
 	// the partition on first boot.
 	content := strings.TrimRightFunc(string(b), unicode.IsSpace)
 	content = strings.TrimSuffix(content, "exit 0")
-	args := " -t " + *timeLocation + " -wc " + *wifiCountry
-	if len(*email) != 0 {
-		args += " -e " + *email
-	}
-	if *fiveInches {
-		args += " -5"
-	}
 	if len(*sshKey) != 0 {
 		fmt.Printf("- SSH keys\n")
-		args += " -sk /boot/authorized_keys"
 		// This assumes you have properly set your own ssh keys and plan to use them.
 		if err := img.CopyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
 			return err
 		}
 	}
-	if len(*wifiSSID) != 0 {
-		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -ws %q -wp %q", *wifiSSID, *wifiPass)
-	}
-	content += fmt.Sprintf(img.RcLocalContent, "/boot", args)
+	content += fmt.Sprintf(img.RcLocalContent, firstBootArgs())
 	log.Printf("Writing %q:\n%s", rcLocal, content)
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
 }
