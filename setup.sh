@@ -537,6 +537,7 @@ function do_wifi {
   # and power limits can be used.
   if [ "$WIFI_COUNTRY" == "" ]; then
     echo "- Guessing country (will only work if wired network)"
+    # Use http instead of https because the clock may not yet be set properly.
     WIFI_COUNTRY="$(curl -fsSL http://ipinfo.io/country 2>/dev/null || true)"
     echo "  Guessed country as \"$WIFI_COUNTRY\""
   fi

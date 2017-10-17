@@ -28,6 +28,7 @@ import (
 	"unicode"
 
 	"github.com/ulikunitz/xz"
+	"periph.io/x/bootstrap/img"
 )
 
 type Distro string
@@ -99,18 +100,18 @@ var (
 	distro       Distro
 	sshKey       = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
-	wifiCountry  = flag.String("wifi-country", getCountry(), "Country setting for Wifi; affect usable bands")
+	wifiCountry  = flag.String("wifi-country", img.GetCountry(), "Country setting for Wifi; affect usable bands")
 	wifiSSID     = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass     = flag.String("wifi-pass", "", "wifi password")
 	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
 	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
 	skipFlash    = flag.Bool("skip-flash", false, "Skip download and flashing, just modify the image")
 	sdCard       = flag.String("sdcard", "", "Path to SD card, generally in the form of /dev/sdX or /dev/mmcblkN")
-	timeLocation = flag.String("time", getTimeLocation(), "Location to use to define time")
+	timeLocation = flag.String("time", img.GetTimeLocation(), "Location to use to define time")
 	v            = flag.Bool("v", false, "log verbosely")
 	// Internal flags.
-	asRoot = flag.Bool("as-root", false, "")
-	img    = flag.String("img", "", "")
+	asRoot  = flag.Bool("as-root", false, "")
+	imgFlag = flag.String("img", "", "")
 )
 
 func init() {
@@ -124,15 +125,6 @@ func init() {
 }
 
 // Utils
-
-func run(name string, arg ...string) error {
-	log.Printf("run(%s %s)", name, strings.Join(arg, " "))
-	cmd := exec.Command(name, arg...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
 
 func capture(name string, arg ...string) (string, error) {
 	log.Printf("capture(%s %s)", name, strings.Join(arg, " "))
@@ -164,39 +156,6 @@ func chownRecursive(path string, uid, gid int) error {
 		}
 		return err
 	})
-}
-
-func getTimeLocation() string {
-	// OSX and Ubuntu
-	if d, _ := os.Readlink("/etc/localtime"); len(d) != 0 {
-		const p = "/usr/share/zoneinfo/"
-		if strings.HasPrefix(d, p) {
-			return d[len(p):]
-		}
-	}
-	// systemd
-	if d, _ := exec.Command("timedatectl").Output(); len(d) != 0 {
-		re := regexp.MustCompile(`(?m)Time zone\: ([^\s]+)`)
-		if match := re.FindSubmatch(d); len(match) != 0 {
-			return string(match[1])
-		}
-	}
-	return "Etc/UTC"
-}
-
-func getCountry() string {
-	// WARNING: This causes an outgoing HTTP request. Please specify
-	// -wifi-country if you are not confortable with this.
-	resp, err := http.DefaultClient.Get("http://ipinfo.io/country")
-	if err != nil {
-		return ""
-	}
-	b, err := ioutil.ReadAll(resp.Body)
-	err2 := resp.Body.Close()
-	if err != nil || err2 != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(b))
 }
 
 // Image fetching
@@ -481,20 +440,15 @@ func setupFirstBoot(boot, root string) error {
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
 }
 
-// flash flashes *img to *sdCard.
-func flash() error {
+// flash flashes imgPath to dst.
+func flash(imgPath, dst string) error {
 	switch runtime.GOOS {
 	case "linux":
 		fmt.Printf("- Unmounting\n")
-		if err := umount(*sdCard); err != nil {
+		if err := umount(dst); err != nil {
 			return err
 		}
-		fmt.Printf("- Flashing (takes 2 minutes)\n")
-		if err := run("dd", "bs=4M", "if="+*img, "of="+*sdCard); err != nil {
-			return err
-		}
-		fmt.Printf("- Flushing I/O cache\n")
-		if err := run("sync"); err != nil {
+		if err := img.Flash(imgPath, dst); err != nil {
 			return err
 		}
 		// This is important otherwise the mount afterward may 'see' the old partition
@@ -502,15 +456,15 @@ func flash() error {
 		fmt.Printf("- Reloading partition table\n")
 		// Wait a bit to try to workaround "Error looking up object for device" when
 		// immediately using "/usr/bin/udisksctl mount" after this script.
-		if err := run("partprobe"); err != nil {
+		if err := img.Run("partprobe"); err != nil {
 			return err
 		}
-		if err := run("sync"); err != nil {
+		if err := img.Run("sync"); err != nil {
 			return err
 		}
 		time.Sleep(time.Second)
 		// Needs suffix 'p' for /dev/mmcblkN but not for /dev/sdX
-		p := *sdCard
+		p := dst
 		if strings.Contains(p, "mmcblk") {
 			p += "p"
 		}
@@ -531,7 +485,9 @@ func flash() error {
 
 func mainAsRoot() error {
 	if !*skipFlash {
-		flash()
+		if err := flash(*imgFlag, *sdCard); err != nil {
+			return err
+		}
 	}
 	var root, boot string
 	var err error
@@ -571,7 +527,7 @@ func mainAsRoot() error {
 	switch runtime.GOOS {
 	case "linux":
 		fmt.Printf("- Unmounting\n")
-		if err = run("sync"); err != nil {
+		if err = img.Run("sync"); err != nil {
 			return err
 		}
 		if err = umount(*sdCard); err != nil {
@@ -658,7 +614,7 @@ func mainAsUser() error {
 	}
 	cmd = append(cmd, "-sdcard", *sdCard)
 	//log.Printf("Running sudo %s", strings.Join(cmd, " "))
-	return run("sudo", cmd...)
+	return img.Run("sudo", cmd...)
 }
 
 func mainImpl() error {
