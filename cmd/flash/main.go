@@ -10,12 +10,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -27,30 +24,9 @@ import (
 	"periph.io/x/bootstrap/img"
 )
 
-const raspbianUART = `
-
-# Enable console on UART on RPi3
-# https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
-[pi3]
-enable_uart=1
-[all]
-`
-
-const rcLocalContent = `
-
-# The following was added by cmd/flash from
-# https://github.com/periph/bootstrap
-
-LOG_FILE=/var/log/firstboot.log
-if [ ! -f $LOG_FILE ]; then
-  %s/firstboot.sh%s 2>&1 | tee $LOG_FILE
-fi
-exit 0
-`
-
 var (
 	distro       img.Distro
-	sshKey       = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
+	sshKey       = flag.String("ssh-key", img.FindPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
 	wifiCountry  = flag.String("wifi-country", img.GetCountry(), "Country setting for Wifi; affect usable bands")
 	wifiSSID     = flag.String("wifi-ssid", "", "wifi ssid")
@@ -74,29 +50,6 @@ func init() {
 
 // Utils
 
-func capture(name string, arg ...string) (string, error) {
-	log.Printf("capture(%s %s)", name, strings.Join(arg, " "))
-	out, err := exec.Command(name, arg...).CombinedOutput()
-	return string(out), err
-}
-
-func copyFile(dst, src string, mode os.FileMode) error {
-	fs, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer fs.Close()
-	fd, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(fd, fs); err != nil {
-		fd.Close()
-		return err
-	}
-	return fd.Close()
-}
-
 func chownRecursive(path string, uid, gid int) error {
 	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
 		if err == nil {
@@ -118,7 +71,7 @@ func mount(p string) (string, error) {
 		// "Error mounting /dev/sdh2: GDBus.Error:org.freedesktop.UDisks2.Error.AlreadyMounted: Device /dev/sdh2"
 		// "is already mounted at `/media/<user>/<GUID>'.
 		re2 := regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
-		txt, _ := capture("/usr/bin/udisksctl", "mount", "-b", p)
+		txt, _ := img.Capture("/usr/bin/udisksctl", "mount", "-b", p)
 		if match := re1.FindStringSubmatch(txt); len(match) != 0 {
 			return match[1], nil
 		}
@@ -143,7 +96,7 @@ func umount(p string) error {
 		for _, m := range matches {
 			if m != p {
 				log.Printf("- Unmounting %s", m)
-				if _, err1 := capture("/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
+				if _, err1 := img.Capture("/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
 					err = err1
 				}
 			}
@@ -168,7 +121,7 @@ func raspbianEnableUART(boot string) error {
 	if err != nil {
 		return err
 	}
-	if _, err = f.WriteString(raspbianUART); err != nil {
+	if _, err = f.WriteString(img.RaspberryPi3UART); err != nil {
 		return err
 	}
 	return f.Close()
@@ -176,7 +129,7 @@ func raspbianEnableUART(boot string) error {
 
 func setupFirstBoot(boot, root string) error {
 	fmt.Printf("- First boot setup script\n")
-	if err := copyFile(filepath.Join(boot, "firstboot.sh"), "setup.sh", 0755); err != nil {
+	if err := img.CopyFile(filepath.Join(boot, "firstboot.sh"), "setup.sh", 0755); err != nil {
 		return err
 	}
 
@@ -207,7 +160,7 @@ func setupFirstBoot(boot, root string) error {
 		fmt.Printf("- SSH keys\n")
 		args += " -sk /boot/authorized_keys"
 		// This assumes you have properly set your own ssh keys and plan to use them.
-		if err := copyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
+		if err := img.CopyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
 			return err
 		}
 	}
@@ -215,7 +168,7 @@ func setupFirstBoot(boot, root string) error {
 		// TODO(maruel): Proper shell escaping.
 		args += fmt.Sprintf(" -ws %q -wp %q", *wifiSSID, *wifiPass)
 	}
-	content += fmt.Sprintf(rcLocalContent, "/boot", args)
+	content += fmt.Sprintf(img.RcLocalContent, "/boot", args)
 	log.Printf("Writing %q:\n%s", rcLocal, content)
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
 }
@@ -327,33 +280,8 @@ func mainAsRoot() error {
 	return nil
 }
 
-func getHome() string {
-	if usr, err := user.Current(); err == nil && len(usr.HomeDir) != 0 {
-		return usr.HomeDir
-	}
-	return os.Getenv("HOME")
-}
-
-func findPublicKey() string {
-	home := getHome()
-	for _, i := range []string{"authorized_keys", "id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
-		p := filepath.Join(home, ".ssh", i)
-		if f, _ := os.Open(p); f != nil {
-			f.Close()
-			return p
-		}
-	}
-	return ""
-}
-
 func mainAsUser() error {
-	gp := os.Getenv("GOPATH")
-	if len(gp) == 0 {
-		gp = filepath.Join(getHome(), "go")
-	} else {
-		gp = strings.SplitN(gp, string(os.PathListSeparator), 2)[0]
-	}
-	rsc := filepath.Join(gp, "src", "periph.io", "x", "bootstrap")
+	rsc := img.GetPath()
 	if err := os.Chdir(rsc); err != nil {
 		return fmt.Errorf("failed to cd to %s", rsc)
 	}

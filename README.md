@@ -16,20 +16,20 @@ Tools meant to be run on your machine are written in [Go](https://golang.org/)
 for portability:
 
 - `cmd/flash`: Downloads an image, flashes it to an SD card and modifies it to
-  run `setup.sh` upon the first boot.
+  run `setup.sh` upon the first boot. It only runs on linux.
 - `cmd/find-host`: Looks for devices on the local network through mDNS. Note
   that Raspbian Stretch doesn't advertize anymore.
 
 
-## Flashing an SD Card
+## Flashing an SD card
 
 This example downloads the Raspbian Stretch Lite image and flashes it to an SD
-Card. You must supply the path to the SD card, generally in the form of
+card. You must supply the path to the SD card, generally in the form of
 `/dev/sdX` or `/dev/mmcblkN`. This only works on linux for now.
 
 ```
 go install periph.io/x/bootstrap/cmd/...
-flash -manufacturer raspberripy --wifi <ssid> <pwd> /dev/sdh
+flash -manufacturer raspberrypi --wifi <ssid> <pwd> /dev/sdh
 ```
 
 `flash` takes care of all the steps below on the micro computer's initial boot.

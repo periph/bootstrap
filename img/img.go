@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -24,6 +25,31 @@ import (
 
 	"github.com/ulikunitz/xz"
 )
+
+// RaspberryPi3UART is the part to append to /boot/config.txt to enable UART on
+// RaspberryPi 3.
+const RaspberryPi3UART = `
+
+# Enable console on UART on RPi3
+# https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
+[pi3]
+enable_uart=1
+[all]
+`
+
+// RcLocalContent is the content to append to /etc/rc.local to shell out
+// /boot/firstboot.sh.
+const RcLocalContent = `
+
+# The following was added by cmd/flash from
+# https://github.com/periph/bootstrap
+
+LOG_FILE=/var/log/firstboot.log
+if [ ! -f $LOG_FILE ]; then
+  %s/firstboot.sh%s 2>&1 | tee $LOG_FILE
+fi
+exit 0
+`
 
 // GetTimeLocation returns the time location, e.g. America/Toronto.
 func GetTimeLocation() string {
@@ -62,6 +88,30 @@ func GetCountry() string {
 	return strings.TrimSpace(string(b))
 }
 
+// GetPath returns path to $GOPATH/src/periph.io/x/bootstrap.
+func GetPath() string {
+	gp := os.Getenv("GOPATH")
+	if len(gp) == 0 {
+		gp = filepath.Join(getHome(), "go")
+	} else {
+		gp = strings.SplitN(gp, string(os.PathListSeparator), 2)[0]
+	}
+	return filepath.Join(gp, "src", "periph.io", "x", "bootstrap")
+}
+
+// FindPublicKey returns a public key for the user if any.
+func FindPublicKey() string {
+	home := getHome()
+	for _, i := range []string{"authorized_keys", "id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
+		p := filepath.Join(home, ".ssh", i)
+		if f, _ := os.Open(p); f != nil {
+			f.Close()
+			return p
+		}
+	}
+	return ""
+}
+
 // Flash flashes imgPath to dst.
 func Flash(imgPath, dst string) error {
 	switch runtime.GOOS {
@@ -77,6 +127,24 @@ func Flash(imgPath, dst string) error {
 	}
 }
 
+// CopyFile copies src from dst.
+func CopyFile(dst, src string, mode os.FileMode) error {
+	fs, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer fs.Close()
+	fd, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(fd, fs); err != nil {
+		fd.Close()
+		return err
+	}
+	return fd.Close()
+}
+
 // Run runs a command.
 func Run(name string, arg ...string) error {
 	log.Printf("Run(%s %s)", name, strings.Join(arg, " "))
@@ -85,6 +153,15 @@ func Run(name string, arg ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// Capture runs a command and return the stdout and stderr merged.
+func Capture(in, name string, arg ...string) (string, error) {
+	log.Printf("Capture(%s %s)", name, strings.Join(arg, " "))
+	cmd := exec.Command(name, arg...)
+	cmd.Stdin = strings.NewReader(in)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 // Manufacturer is a board brand manufacturer.
@@ -455,4 +532,11 @@ func fetchURL(url string) ([]byte, error) {
 		return nil, fmt.Errorf("Failed to read %q: %v", url, err)
 	}
 	return reply, nil
+}
+
+func getHome() string {
+	if usr, err := user.Current(); err == nil && len(usr.HomeDir) != 0 {
+		return usr.HomeDir
+	}
+	return os.Getenv("HOME")
 }
