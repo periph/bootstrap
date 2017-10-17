@@ -7,15 +7,12 @@
 package main // import "periph.io/x/bootstrap/cmd/flash"
 
 import (
-	"archive/zip"
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -27,53 +24,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/ulikunitz/xz"
 	"periph.io/x/bootstrap/img"
 )
-
-type Distro string
-
-func (d *Distro) String() string {
-	return string(*d)
-}
-
-func (d *Distro) Set(s string) error {
-	if _, ok := userMap[Distro(s)]; !ok {
-		return fmt.Errorf("unsupported distro")
-	}
-	*d = Distro(s)
-	return nil
-}
-
-const (
-	// https://docs.getchip.com/chip.html
-	chip Distro = "chip"
-	// If you find yourself the need to debug over serial, see
-	// http://odroid.com/dokuwiki/doku.php?id=en:usb_uart_kit for how to connect.
-	odroidC1 Distro = "odroid-c1"
-	// https://www.raspberrypi.org/documentation/linux/
-	raspbian Distro = "raspbian"
-)
-
-// userMap is the default user as 1000:1000 on the distro.
-var userMap = map[Distro]string{
-	// https://docs.getchip.com/chip.html
-	chip: "chip",
-	// Ubuntu minimal doesn't come with a user, it is created on first boot.
-	// Using 'odroid' to be compatible with the Ubuntu full image.
-	// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1/
-	odroidC1: "odroid",
-	// https://www.raspberrypi.org/documentation/linux/usage/users.md
-	raspbian: "pi",
-}
-
-// hostMap is the default hostname on the distro. rename_host.sh will add
-// "-XXXX" suffix based on the device's serial number.
-var hostMap = map[Distro]string{
-	chip:     "chip",
-	odroidC1: "odroid",
-	raspbian: "raspberrypi",
-}
 
 const raspbianUART = `
 
@@ -97,7 +49,7 @@ exit 0
 `
 
 var (
-	distro       Distro
+	distro       img.Distro
 	sshKey       = flag.String("ssh-key", findPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
 	wifiCountry  = flag.String("wifi-country", img.GetCountry(), "Country setting for Wifi; affect usable bands")
@@ -115,13 +67,9 @@ var (
 )
 
 func init() {
-	var names []string
-	for k := range userMap {
-		names = append(names, string(k))
-	}
-	sort.Strings(names)
-	h := fmt.Sprintf("Select the distribution to install: %s", strings.Join(names, ", "))
-	flag.Var(&distro, "distro", h)
+	flag.Var(&distro.Manufacturer, "manufacturer", img.ManufacturerHelp())
+	flag.Var(&distro.Board, "board", img.BoardHelp())
+	// TODO(maruel): flag.StringVar(&distro.Distro, "distro", "", "Specific distro, optional")
 }
 
 // Utils
@@ -156,174 +104,6 @@ func chownRecursive(path string, uid, gid int) error {
 		}
 		return err
 	})
-}
-
-// Image fetching
-
-func fetchURL(url string) ([]byte, error) {
-	r, err := http.DefaultClient.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch %q: %v", url, err)
-	}
-	defer r.Body.Close()
-	if r.StatusCode != 200 {
-		return nil, fmt.Errorf("Failed to fetch %q: status %d", url, r.StatusCode)
-	}
-	reply, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to read %q: %v", url, err)
-	}
-	return reply, nil
-}
-
-// raspbianGetLatestImageURL reads the image listing to find the latest one.
-//
-// Getting the torrent would be nicer to the host.
-func raspbianGetLatestImageURL() (string, string) {
-	// This is where https://downloads.raspberrypi.org/raspbian_lite_latest
-	// redirects to.
-	const baseImgURL = "https://downloads.raspberrypi.org/raspbian_lite/images/"
-	const dirFmt = "raspbian_lite-%s/"
-	re1 := regexp.MustCompile(`raspbian_lite-(20\d\d-\d\d-\d\d)/`)
-	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspbian-[[:alpha:]]+-lite\.zip)`)
-	var matches [][][]byte
-	var match [][]byte
-
-	// Use a recent (as of now) default date, it's not a big deal if the image is
-	// a bit stale, it'll just take more time to "apt upgrade".
-	date := "2017-08-16"
-	distro := "stretch"
-	zipFile := date + "-raspbian-" + distro + "-lite.zip"
-	imgFile := date + "-raspbian-" + distro + "-lite.img"
-
-	r, err := fetchURL(baseImgURL)
-	if err != nil {
-		log.Printf("failed to fetch: %v", err)
-		goto end
-	}
-
-	// This will be good until 2099.
-	matches = re1.FindAllSubmatch(r, -1)
-	if len(matches) == 0 {
-		log.Printf("failed to match: %q", r)
-		goto end
-	}
-
-	// It's already in sorted order.
-	date = string(matches[len(matches)-1][1])
-
-	// Find the distro name.
-	r, err = fetchURL(baseImgURL + fmt.Sprintf(dirFmt, date))
-	if err != nil {
-		log.Printf("failed to fetch: %v", err)
-		goto end
-	}
-	match = re2.FindSubmatch(r)
-	if len(match) == 0 {
-		log.Printf("failed to match: %q", r)
-		goto end
-	}
-	zipFile = string(match[1])
-	imgFile = zipFile[:len(zipFile)-3] + "img"
-
-end:
-	url := baseImgURL + fmt.Sprintf(dirFmt, date) + zipFile
-	log.Printf("Raspbian date: %s", date)
-	log.Printf("Raspbian distro: %s", distro)
-	log.Printf("Raspbian URL: %s", url)
-	log.Printf("Raspbian file: %s", imgFile)
-	return url, imgFile
-}
-
-// fetchImg fetches the distro image remotely.
-func fetchImg() (string, error) {
-	switch distro {
-	case odroidC1:
-		// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1
-		// http://odroid.in/ubuntu_16.04lts/
-		mirror := "https://odroid.in/ubuntu_16.04lts/"
-		// http://east.us.odroid.in/ubuntu_16.04lts
-		// http://de.eu.odroid.in/ubuntu_16.04lts
-		// http://dn.odroid.com/S805/Ubuntu
-		imgname := "ubuntu-16.04.2-minimal-odroid-c1-20170221.img"
-		if f, _ := os.Open(imgname); f != nil {
-			fmt.Printf("- Reusing Ubuntu minimal image %s\n", imgname)
-			f.Close()
-			return imgname, nil
-		}
-		fmt.Printf("- Fetching %s\n", imgname)
-		resp, err := http.DefaultClient.Get(mirror + imgname + ".xz")
-		if err != nil {
-			return "", err
-		}
-		defer resp.Body.Close()
-		r, err := xz.NewReader(resp.Body)
-		if err != nil {
-			return "", err
-		}
-		f, err := os.Create(imgname)
-		if err != nil {
-			return "", err
-		}
-		// Decompress as the file is being downloaded.
-		if _, err = io.Copy(f, r); err != nil {
-			f.Close()
-			return "", err
-		}
-		if err := f.Close(); err != nil {
-			return "", err
-		}
-		return imgname, nil
-	case raspbian:
-		imgurl, imgname := raspbianGetLatestImageURL()
-		if f, _ := os.Open(imgname); f != nil {
-			fmt.Printf("- Reusing Raspbian Jessie Lite image %s\n", imgname)
-			f.Close()
-			return imgname, nil
-		}
-		fmt.Printf("- Fetching %s\n", imgname)
-		// Read the whole file in memory. This is less than 300Mb. Save to disk if
-		// it is too much for your system.
-		// TODO(maruel): Progress bar?
-		z, err := fetchURL(imgurl)
-		if err != nil {
-			return "", err
-		}
-		// Because zip header is at the end of the file, extraction can only begin
-		// once the file is fully downloaded.
-		fmt.Printf("- Extracting zip\n")
-		r, err := zip.NewReader(bytes.NewReader(z), int64(len(z)))
-		if err != nil {
-			return "", err
-		}
-		for _, fi := range r.File {
-			if filepath.Base(fi.Name) == imgname {
-				a, err := fi.Open()
-				if err != nil {
-					return "", err
-				}
-				f, err := os.Create(imgname)
-				if err != nil {
-					return "", err
-				}
-				if _, err = io.Copy(f, a); err != nil {
-					f.Close()
-					return "", err
-				}
-				if err := f.Close(); err != nil {
-					return "", err
-				}
-				return imgname, nil
-			}
-		}
-		return "", errors.New("failed to find image in zip")
-	default:
-		// - https://www.armbian.com/download/
-		// - https://beagleboard.org/latest-images better to flash then run setup.sh
-		//   manually.
-		// - https://flash.getchip.com/ better to flash then run setup.sh manually.
-		return "", fmt.Errorf("don't know how to fetch distro %s", distro)
-	}
 }
 
 //
@@ -538,7 +318,7 @@ func mainAsRoot() error {
 	}
 	fmt.Printf("\nYou can now remove the SDCard safely and boot your Micro computer\n")
 	fmt.Printf("Connect with:\n")
-	fmt.Printf("  ssh -o StrictHostKeyChecking=no %s@%s\n\n", userMap[distro], hostMap[distro])
+	fmt.Printf("  ssh -o StrictHostKeyChecking=no %s@%s\n\n", distro.DefaultUser(), distro.DefaultHostname())
 	fmt.Printf("You can follow the update process by either:\n")
 	fmt.Printf("- connecting a monitor\n")
 	fmt.Printf("- connecting to the serial port\n")
@@ -578,7 +358,7 @@ func mainAsUser() error {
 		return fmt.Errorf("failed to cd to %s", rsc)
 	}
 
-	imgname, err := fetchImg()
+	imgpath, err := distro.Fetch()
 	if err != nil {
 		return err
 	}
@@ -589,8 +369,12 @@ func mainAsUser() error {
 		return err
 	}
 	cmd := []string{
-		execname, "-as-root", "-distro", string(distro), "-ssh-key", *sshKey,
-		"-img", imgname, "-wifi-country", *wifiCountry, "-time", *timeLocation,
+		execname, "-as-root",
+		"-manufacturer", distro.Manufacturer.String(),
+		"-board", distro.Board.String(),
+		//"-distro", distro.Distro,
+		"-ssh-key", *sshKey,
+		"-img", imgpath, "-wifi-country", *wifiCountry, "-time", *timeLocation,
 	}
 	// Propagate optional flags.
 	if *wifiSSID != "" {
@@ -629,18 +413,18 @@ func mainImpl() error {
 	if len(*sdCard) == 0 {
 		return errors.New("-sdcard is required")
 	}
-	if distro == "" {
-		return errors.New("-distro is required")
-	}
 	if (*wifiSSID != "") != (*wifiPass != "") {
 		return errors.New("use both --wifi-ssid and --wifi-pass")
 	}
-	if distro != raspbian {
+	if err := distro.Check(); err != nil {
+		return err
+	}
+	if distro.Manufacturer != img.RaspberryPi {
 		if *fiveInches {
-			return errors.New("-5inch only make sense with -distro raspbian")
+			return errors.New("-5inch only make sense with -manufacturer raspberrypi")
 		}
 		if *forceUART {
-			return errors.New("-forceuart only make sense with -distro raspbian")
+			return errors.New("-forceuart only make sense with -manufacturer raspberrypi")
 		}
 	}
 	if *asRoot {

@@ -29,7 +29,7 @@ Card. You must supply the path to the SD card, generally in the form of
 
 ```
 go install periph.io/x/bootstrap/cmd/...
-flash --distro raspbian --wifi <ssid> <pwd> /dev/sdh
+flash -manufacturer raspberripy --wifi <ssid> <pwd> /dev/sdh
 ```
 
 `flash` takes care of all the steps below on the micro computer's initial boot.
