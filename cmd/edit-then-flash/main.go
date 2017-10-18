@@ -195,21 +195,29 @@ func addFile(p fs.Directory, dst, src string) error {
 }
 
 func modifyBoot(boot fs.Directory) error {
-	if err := addFile(boot, "firstboot.sh", "setup.sh"); err != nil {
+	s, err := boot.AddFile("firstboot.sh")
+	if err != nil {
+		return err
+	}
+	s2, err := s.File()
+	if err != nil {
+		return err
+	}
+	if _, err = s2.Write(img.GetSetupSH()); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
-		if err := addFile(boot, "authorized_keys", *sshKey); err != nil {
+		if err = addFile(boot, "authorized_keys", *sshKey); err != nil {
 			return err
 		}
 	}
 	if len(*postScript) != 0 {
-		if err := addFile(boot, filepath.Base(*postScript), *postScript); err != nil {
+		if err = addFile(boot, filepath.Base(*postScript), *postScript); err != nil {
 			return err
 		}
 	}
 	if *forceUART {
-		if err := raspbianEnableUART(boot); err != nil {
+		if err = raspbianEnableUART(boot); err != nil {
 			return err
 		}
 	}
@@ -291,18 +299,13 @@ func mainImpl() error {
 		}
 	}
 
-	rsc := img.GetPath()
-	if err := os.Chdir(rsc); err != nil {
-		return fmt.Errorf("failed to cd to %s", rsc)
-	}
-
-	imgname, err := distro.Fetch()
+	imgpath, err := distro.Fetch()
 	if err != nil {
 		return err
 	}
-	e := filepath.Ext(imgname)
-	imgmod := imgname[:len(imgname)-len(e)] + "-mod" + e
-	if err := img.CopyFile(imgmod, imgname, 0666); err != nil {
+	e := filepath.Ext(imgpath)
+	imgmod := imgpath[:len(imgpath)-len(e)] + "-mod" + e
+	if err := img.CopyFile(imgmod, imgpath, 0666); err != nil {
 		return err
 	}
 	if err = modifyImage(imgmod); err != nil {

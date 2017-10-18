@@ -75,30 +75,39 @@ func GetTimeLocation() string {
 // WARNING: This causes an outgoing HTTP request.
 func GetCountry() string {
 	// TODO(maruel): Ask the OS first if possible.
-	resp, err := http.DefaultClient.Get("https://ipinfo.io/country")
+	b, err := fetchURL("https://ipinfo.io/country")
 	if err != nil {
-		return ""
-	}
-	b, err := ioutil.ReadAll(resp.Body)
-	err2 := resp.Body.Close()
-	if err != nil || err2 != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
 }
 
-// GetPath returns path to $GOPATH/src/periph.io/x/bootstrap.
-func GetPath() string {
-	gp := os.Getenv("GOPATH")
-	if len(gp) == 0 {
-		gp = filepath.Join(getHome(), "go")
-	} else {
-		gp = strings.SplitN(gp, string(os.PathListSeparator), 2)[0]
+// GetSetupSH returns the content of setup.sh.
+//
+// Returns nil in case of catastrophic error.
+func GetSetupSH() []byte {
+	var p []string
+	if v, err := os.Getwd(); err == nil {
+		p = append(p, v)
 	}
-	return filepath.Join(gp, "src", "periph.io", "x", "bootstrap")
+	if gp := os.Getenv("GOPATH"); len(gp) != 0 {
+		for _, v := range strings.Split(gp, string(os.PathListSeparator)) {
+			p = append(p, filepath.Join(v, "go", "src", "periph.io", "x", "bootstrap"))
+		}
+	} else {
+		p = append(p, filepath.Join(getHome(), "go", "src", "periph.io", "x", "bootstrap"))
+	}
+	for _, v := range p {
+		b, err := ioutil.ReadFile(filepath.Join(v, "setup.sh"))
+		if err == nil && len(b) != 0 {
+			return b
+		}
+	}
+	b, _ := fetchURL("https://raw.githubusercontent.com/periph/bootstrap/master/setup.sh")
+	return b
 }
 
-// FindPublicKey returns a public key for the user if any.
+// FindPublicKey returns the absolute path to a public key for the user, if any.
 func FindPublicKey() string {
 	home := getHome()
 	for _, i := range []string{"authorized_keys", "id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
@@ -378,6 +387,8 @@ func (d *Distro) DefaultHostname() string {
 }
 
 // Fetch fetches the distro image remotely.
+//
+// Returns the absolute path to the file downloaded.
 func (d *Distro) Fetch() (string, error) {
 	switch d.Manufacturer {
 	case HardKernel:
@@ -402,14 +413,17 @@ func (d *Distro) fetchHardKernel() (string, error) {
 	// http://east.us.odroid.in/ubuntu_16.04lts
 	// http://de.eu.odroid.in/ubuntu_16.04lts
 	// http://dn.odroid.com/S805/Ubuntu
-	imgname := "ubuntu-16.04.2-minimal-odroid-c1-20170221.img"
-	if f, _ := os.Open(imgname); f != nil {
-		fmt.Printf("- Reusing Ubuntu minimal image %s\n", imgname)
-		f.Close()
-		return imgname, nil
+	imgpath, err := filepath.Abs("ubuntu-16.04.2-minimal-odroid-c1-20170221.img")
+	if err != nil {
+		return "", err
 	}
-	fmt.Printf("- Fetching %s\n", imgname)
-	resp, err := http.DefaultClient.Get(mirror + imgname + ".xz")
+	if f, _ := os.Open(imgpath); f != nil {
+		fmt.Printf("- Reusing Ubuntu minimal image %s\n", imgpath)
+		f.Close()
+		return imgpath, nil
+	}
+	fmt.Printf("- Fetching %s\n", imgpath)
+	resp, err := http.DefaultClient.Get(mirror + imgpath + ".xz")
 	if err != nil {
 		return "", err
 	}
@@ -418,7 +432,7 @@ func (d *Distro) fetchHardKernel() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	f, err := os.Create(imgname)
+	f, err := os.Create(imgpath)
 	if err != nil {
 		return "", err
 	}
@@ -430,17 +444,21 @@ func (d *Distro) fetchHardKernel() (string, error) {
 	if err := f.Close(); err != nil {
 		return "", err
 	}
-	return imgname, nil
+	return imgpath, nil
 }
 
 func (d *Distro) fetchRaspberryPi() (string, error) {
 	imgurl, imgname := raspbianGetLatestImageURL()
-	if f, _ := os.Open(imgname); f != nil {
-		fmt.Printf("- Reusing Raspbian Jessie Lite image %s\n", imgname)
-		f.Close()
-		return imgname, nil
+	imgpath, err := filepath.Abs(imgname)
+	if err != nil {
+		return "", err
 	}
-	fmt.Printf("- Fetching %s\n", imgname)
+	if f, _ := os.Open(imgpath); f != nil {
+		fmt.Printf("- Reusing Raspbian Jessie Lite image %s\n", imgpath)
+		f.Close()
+		return imgpath, nil
+	}
+	fmt.Printf("- Fetching %s\n", imgpath)
 	// Read the whole file in memory. This is less than 300Mb. Save to disk if
 	// it is too much for your system.
 	// TODO(maruel): Progress bar?
@@ -456,12 +474,12 @@ func (d *Distro) fetchRaspberryPi() (string, error) {
 		return "", err
 	}
 	for _, fi := range r.File {
-		if filepath.Base(fi.Name) == imgname {
+		if filepath.Base(fi.Name) == filepath.Base(imgpath) {
 			a, err := fi.Open()
 			if err != nil {
 				return "", err
 			}
-			f, err := os.Create(imgname)
+			f, err := os.Create(imgpath)
 			if err != nil {
 				return "", err
 			}
@@ -472,7 +490,7 @@ func (d *Distro) fetchRaspberryPi() (string, error) {
 			if err := f.Close(); err != nil {
 				return "", err
 			}
-			return imgname, nil
+			return imgpath, nil
 		}
 	}
 	return "", errors.New("failed to find image in zip")

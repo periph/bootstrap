@@ -103,11 +103,7 @@ func raspbianEnableUART(imgpath string, lbaStart uint32) error {
 	return nil
 }
 
-func modifyImage(imgname string) error {
-	imgpath, err := filepath.Abs(imgname)
-	if err != nil {
-		return err
-	}
+func modifyImage(imgpath string) error {
 	f, err := os.Open(imgpath)
 	if err != nil {
 		return err
@@ -133,7 +129,7 @@ func modifyImage(imgname string) error {
 }
 
 func modifyBoot(imgpath string, lbaStart uint32) error {
-	if _, err := docker(imgpath, lbaStart, "", "cp /work/setup.sh /mnt/firstboot.sh"); err != nil {
+	if _, err := docker(imgpath, lbaStart, string(img.GetSetupSH()), "cat > /mnt/firstboot.sh"); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
@@ -227,18 +223,13 @@ func mainImpl() error {
 		}
 	}
 
-	rsc := img.GetPath()
-	if err := os.Chdir(rsc); err != nil {
-		return fmt.Errorf("failed to cd to %s", rsc)
-	}
-
-	imgname, err := distro.Fetch()
+	imgpath, err := distro.Fetch()
 	if err != nil {
 		return err
 	}
-	e := filepath.Ext(imgname)
-	imgmod := imgname[:len(imgname)-len(e)] + "-mod" + e
-	if err := img.CopyFile(imgmod, imgname, 0666); err != nil {
+	e := filepath.Ext(imgpath)
+	imgmod := imgpath[:len(imgpath)-len(e)] + "-mod" + e
+	if err := img.CopyFile(imgmod, imgpath, 0666); err != nil {
 		return err
 	}
 	if err = modifyImage(imgmod); err != nil {

@@ -172,7 +172,7 @@ func firstBootArgs() string {
 
 func setupFirstBoot(boot, root string) error {
 	fmt.Printf("- First boot setup script\n")
-	if err := img.CopyFile(filepath.Join(boot, "firstboot.sh"), "setup.sh", 0755); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0755); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
@@ -316,11 +316,6 @@ func mainAsRoot() error {
 }
 
 func mainAsUser() error {
-	rsc := img.GetPath()
-	if err := os.Chdir(rsc); err != nil {
-		return fmt.Errorf("failed to cd to %s", rsc)
-	}
-
 	imgpath, err := distro.Fetch()
 	if err != nil {
 		return err
