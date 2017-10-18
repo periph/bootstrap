@@ -2,9 +2,8 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// flash fetches an image, flashes it to an SDCard and modifies it to bootstrap
-// automatically.
-package main // import "periph.io/x/bootstrap/cmd/flash"
+// flash-then-edit fetches an image, flashes it to an SDCard, then modifies it.
+package main // import "periph.io/x/bootstrap/cmd/flash-then-edit"
 
 import (
 	"errors"
@@ -373,7 +372,7 @@ func mainImpl() error {
 
 func main() {
 	if err := mainImpl(); err != nil {
-		fmt.Fprintf(os.Stderr, "\nflash: %s.\n", err)
+		fmt.Fprintf(os.Stderr, "\nflash-then-edit: %s.\n", err)
 		os.Exit(1)
 	}
 }

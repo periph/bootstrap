@@ -2,9 +2,8 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// flash-exp fetches an image, modifies it then flashes it to an SDCard, to
-// bootstrap automatically.
-package main // import "periph.io/x/bootstrap/cmd/flash-exp"
+// edit-then-flash fetches an image, modifies it, then flashes it to an SDCard.
+package main // import "periph.io/x/bootstrap/cmd/edit-then-flash"
 
 import (
 	"bytes"
@@ -315,7 +314,7 @@ func mainImpl() error {
 
 func main() {
 	if err := mainImpl(); err != nil {
-		fmt.Fprintf(os.Stderr, "\nflash-exp: %s.\n", err)
+		fmt.Fprintf(os.Stderr, "\nedit-then-flash: %s.\n", err)
 		os.Exit(1)
 	}
 }

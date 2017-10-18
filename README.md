@@ -15,13 +15,15 @@ reusable.
 Tools meant to be run on your machine are written in [Go](https://golang.org/)
 for portability:
 
-- `cmd/flash`: Downloads an image, flashes it to an SD card and modifies it to
-  run `setup.sh` upon the first boot. It only runs on linux.
+- `cmd/edit-then-flash`: **(recommended)** Downloads an image, modifies a copy
+  to run `setup.sh`, upon the first boot then optionally flashes it to an SD
+  card. It does so without requiring any third party software.
+- `cmd/flash-then-edit`: Downloads an image, flashes it to an SD card and
+  modifies it to run `setup.sh` upon the first boot. It currently only runs on
+  linux.
 - `cmd/flash-docker`: Downloads an image, modifies a copy to
   run `setup.sh` upon the first boot then optionally flashes it to an SD card.
   It requires docker to be installed.
-- `cmd/flash-exp` enables flashing on any OS by editing the parititon directly.
-  This is currently experimental but the best option on other OSes than linux.
 - `cmd/find-host`: Looks for devices on the local network through mDNS. Note
   that Raspbian Stretch doesn't advertize anymore.
 
@@ -34,10 +36,11 @@ card. You must supply the path to the SD card, generally in the form of
 
 ```
 go install periph.io/x/bootstrap/cmd/...
-flash -manufacturer raspberrypi --wifi <ssid> <pwd> /dev/sdh
+edit-then-flash -manufacturer raspberrypi --wifi <ssid> <pwd> /dev/sdh
 ```
 
-`flash` takes care of all the steps below on the micro computer's initial boot.
+`edit-then-flash` takes care of all the steps below on the micro computer's
+initial boot.
 
 `flash-docker` works by first modifying a copy of the image and only then flash
 it. It may be possible to make to work on OSX and Windows.
