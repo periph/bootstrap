@@ -31,8 +31,11 @@ for portability:
 ## Flashing an SD card
 
 This example downloads the Raspbian Stretch Lite image and flashes it to an SD
-card. You must supply the path to the SD card, generally in the form of
-`/dev/sdX` or `/dev/mmcblkN`. This only works on linux for now.
+card. You must supply the path to the SD card:
+
+- Linux: it is in the form of `/dev/sdX` or `/dev/mmcblkN`.
+- OSX: It is in the form of `/dev/diskX`. You can identify the disk of your SD
+  card by running: `diskutil list`.  It will look like `/dev/disk2`.
 
 ```
 go install periph.io/x/bootstrap/cmd/...

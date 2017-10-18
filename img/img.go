@@ -8,6 +8,7 @@ package img // import "periph.io/x/bootstrap/img"
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DHowett/go-plist"
 	"github.com/ulikunitz/xz"
 )
 
@@ -109,16 +111,38 @@ func FindPublicKey() string {
 	return ""
 }
 
+// ListSDCards returns the SD cards found.
+//
+// Returns nil in case of error.
+func ListSDCards() []string {
+	switch runtime.GOOS {
+	case "linux":
+		return listSDCardsLinux()
+	case "darwin":
+		return listSDCardsOSX()
+	default:
+		return nil
+	}
+}
+
+func ddFlash(imgPath, dst string) error {
+	fmt.Printf("- Flashing (takes 2 minutes)\n")
+	// OSX uses 'M' but Ubuntu uses 'm'.
+	if err := Run("sudo", "dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if="+imgPath, "of="+dst); err != nil {
+		return err
+	}
+	fmt.Printf("- Flushing I/O cache\n")
+	return Run("sudo", "sync")
+}
+
 // Flash flashes imgPath to dst.
 func Flash(imgPath, dst string) error {
 	switch runtime.GOOS {
+	case "darwin":
+		_, _ = Capture("", "diskutil", "unmountDisk", dst)
+		return ddFlash(imgPath, dst)
 	case "linux":
-		fmt.Printf("- Flashing (takes 2 minutes)\n")
-		if err := Run("dd", "bs=4M", "if="+imgPath, "of="+dst); err != nil {
-			return err
-		}
-		fmt.Printf("- Flushing I/O cache\n")
-		return Run("sync")
+		return ddFlash(imgPath, dst)
 	default:
 		return errors.New("Flash() is not implemented on this OS")
 	}
@@ -154,7 +178,7 @@ func Run(name string, arg ...string) error {
 
 // Capture runs a command and return the stdout and stderr merged.
 func Capture(in, name string, arg ...string) (string, error) {
-	log.Printf("Capture(%s %s)", name, strings.Join(arg, " "))
+	//log.Printf("Capture(%s %s)", name, strings.Join(arg, " "))
 	cmd := exec.Command(name, arg...)
 	cmd.Stdin = strings.NewReader(in)
 	out, err := cmd.CombinedOutput()
@@ -536,4 +560,122 @@ func getHome() string {
 		return usr.HomeDir
 	}
 	return os.Getenv("HOME")
+}
+
+type lsblk struct {
+	BlockDevices []struct {
+		Name       string
+		MajMin     string `json:"maj:min"`
+		RM         string
+		Size       string
+		RO         string
+		Type       string
+		MountPoint string
+	}
+}
+
+func listSDCardsLinux() []string {
+	b, err := Capture("", "lsblk", "--json")
+	if err != nil {
+		return nil
+	}
+	v := lsblk{}
+	err = json.Unmarshal([]byte(b), &v)
+	if err != nil {
+		return nil
+	}
+	out := []string{}
+	for _, dev := range v.BlockDevices {
+		if dev.RM == "1" && dev.RO == "0" && dev.Type == "disk" {
+			out = append(out, "/dev/"+dev.Name)
+		}
+	}
+	return out
+}
+
+type diskutilList struct {
+	AllDisks              []string
+	AllDisksAndPartitions []struct {
+		Content          string
+		DeviceIdentifier string
+		Partitions       []map[string]interface{}
+		MountPoint       string
+		Size             int64
+		VolumeName       string
+	}
+	VolumesFromDisks []string
+	WholeDisks       []string
+}
+
+type diskutilInfo struct {
+	Bootable                                    bool
+	BusProtocol                                 string
+	CanBeMadeBootable                           bool
+	CanBeMadeBootableRequiresDestroy            bool
+	content                                     string
+	DeviceBlockSize                             int64
+	DeviceIdentifier                            string
+	DeviceNode                                  string
+	DeviceTreePath                              string
+	Ejectable                                   bool
+	EjectableMediaAutomaticUnderSoftwareControl bool
+	EjectableOnly                               bool
+	FreeSpace                                   int64
+	GlobalPermissionsEnabled                    bool
+	IOKitSize                                   int64
+	IORegistryEntryName                         string
+	Internal                                    bool
+	LowLevelFormatSupported                     bool
+	MediaName                                   string
+	MediaType                                   string
+	MountPoint                                  string
+	OS9DriversInstalled                         bool
+	ParentWholeDisk                             string
+	RAIDMaster                                  bool
+	RAIDSlice                                   bool
+	Removable                                   bool
+	RemovableMedia                              bool
+	RemovableMediaOrExternalDevice              bool
+	SMARTStatus                                 string
+	Size                                        int64
+	SupportsGlobalPermissionsDisable            bool
+	SystemImage                                 bool
+	TotalSize                                   int64
+	VirtualOrPhysical                           string
+	VolumeName                                  string
+	VolumeSize                                  int64
+	WholeDisk                                   bool
+	Writable                                    bool
+	WritableMedia                               bool
+	WritableVolume                              bool
+}
+
+func listSDCardsOSX() []string {
+	b, err := Capture("", "diskutil", "list", "-plist")
+	if err != nil {
+		return nil
+	}
+	disks := diskutilList{}
+	_, err = plist.Unmarshal([]byte(b), &disks)
+	if err != nil {
+		return nil
+	}
+	out := []string{}
+	for _, d := range disks.WholeDisks {
+		b, err = Capture("", "diskutil", "info", "-plist", d)
+		if err != nil {
+			continue
+		}
+		info := diskutilInfo{}
+		_, err = plist.Unmarshal([]byte(b), &info)
+		if err != nil {
+			continue
+		}
+		if info.RemovableMedia && info.Writable {
+			// rdisk is faster than disk so construct it manually instead of using
+			// info.DeviceNode.
+			out = append(out, "/dev/r"+d)
+		}
+	}
+	return out
 }

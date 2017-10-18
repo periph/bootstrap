@@ -3,6 +3,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/DHowett/go-plist"
+  packages = ["."]
+  revision = "f00f32b327ca6ad11a7c53d9ccc34d031b3795b8"
+
+[[projects]]
+  branch = "master"
   name = "github.com/maruel/go-fs"
   packages = [".","fat"]
   revision = "e4b165b178f6190f2dcfe5913aeed0c79197ce6b"
@@ -22,6 +28,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "597ea095d93dc30f02bc77e58074e169c2001cabc917b1fb833aed63e69b8f07"
+  inputs-digest = "9e9d8857eb7ddbc88a2b6b86c52a2c6e4f4f650bbb9098bbf6d0a823827e62fb"
   solver-name = "gps-cdcl"
   solver-version = 1

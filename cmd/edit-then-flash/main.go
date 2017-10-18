@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/maruel/go-fs"
 	"github.com/maruel/go-fs/fat"
@@ -41,7 +42,7 @@ var (
 	wifiPass     = flag.String("wifi-pass", "", "wifi password")
 	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
 	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
-	sdCard       = flag.String("sdcard", "", "Path to SD card, generally in the form of /dev/sdX or /dev/mmcblkN")
+	sdCard       = flag.String("sdcard", getDefaultSDCard(), getSDCardHelp())
 	timeLocation = flag.String("time", img.GetTimeLocation(), "Location to use to define time")
 	v            = flag.Bool("v", false, "log verbosely")
 )
@@ -53,6 +54,24 @@ func init() {
 }
 
 // Utils
+
+func getDefaultSDCard() string {
+	if b := img.ListSDCards(); len(b) == 1 {
+		return b[0]
+	}
+	return ""
+}
+
+func getSDCardHelp() string {
+	b := img.ListSDCards()
+	if len(b) == 0 {
+		return fmt.Sprintf("Path to SD card; be sure to insert one first")
+	}
+	if len(b) == 1 {
+		return fmt.Sprintf("Path to SD card")
+	}
+	return fmt.Sprintf("Path to SD card; one of %s", strings.Join(b, ","))
+}
 
 func writeToFile(dst io.Writer, src string) error {
 	fs, err := os.Open(src)
