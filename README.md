@@ -31,15 +31,11 @@ for portability:
 ## Flashing an SD card
 
 This example downloads the Raspbian Stretch Lite image and flashes it to an SD
-card. You must supply the path to the SD card:
-
-- Linux: it is in the form of `/dev/sdX` or `/dev/mmcblkN`.
-- OSX: It is in the form of `/dev/diskX`. You can identify the disk of your SD
-  card by running: `diskutil list`.  It will look like `/dev/disk2`.
+card connected to the workstation. You must connect one and only one SD card:
 
 ```
 go install periph.io/x/bootstrap/cmd/...
-edit-then-flash -manufacturer raspberrypi --wifi <ssid> <pwd> /dev/sdh
+edit-then-flash -manufacturer raspberrypi --wifi <ssid> <pwd
 ```
 
 `edit-then-flash` takes care of all the steps below on the micro computer's
@@ -47,6 +43,18 @@ initial boot.
 
 `flash-docker` works by first modifying a copy of the image and only then flash
 it. It may be possible to make to work on OSX and Windows.
+
+
+### Manual SD card selection
+
+If your workstation has more than one removable disk, it will not select one
+automatically, you have to specify it with `-sdcard`:
+
+- Linux: it is in the form of `/dev/sdX` or `/dev/mmcblkN`.
+- OSX: It is in the form of `/dev/diskX`. You can identify the disk of your SD
+  card by running: `diskutil list`.  It will look like `/dev/disk2`.
+  - Specify `/dev/rdiskN` (with the **r** for RAW) otherwise it is _much_
+    slower.
 
 
 ### Enabling UART
