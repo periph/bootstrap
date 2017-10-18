@@ -262,7 +262,7 @@ function do_bash_history {
 
 
 function do_timezone {
-  echo "- do_timezone: Changes the timezone to America/Toronto"
+  echo "- do_timezone: Changes the timezone to $TIMEZONE"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   sudo timedatectl set-timezone $TIMEZONE
@@ -347,13 +347,13 @@ function do_golang {
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   local GO_ARCH=$(dpkg --print-architecture)
-  if [ $GO_ARCH = armhf ]; then
+  if [ "$GO_ARCH" = "armhf" ]; then
     GO_ARCH=armv6l
   fi
   local GO_OS_NAME=linux
 
-  if [ "$(getconf LONG_BIT)" == "64" ]; then
-    if [ $GO_ARCH == arm ]; then
+  if [ "$(getconf LONG_BIT)" = "64" ]; then
+    if [ "$GO_ARCH" = "arm" ]; then
       echo "  Falling back to local go toolchain compilation"
       do_golang_compile
       return 0
@@ -505,7 +505,7 @@ function do_rename_host {
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   echo "  New hostname is: $HOST"
-  if [ $BOARD = raspberrypi ]; then
+  if [ "$BOARD" = "raspberrypi" ]; then
     run sudo raspi-config nonint do_hostname $HOST
   else
     #OLD="$(hostname)"
@@ -535,14 +535,14 @@ function do_wifi {
 
   # First set the Country. This is important since it affects which wifi bands
   # and power limits can be used.
-  if [ "$WIFI_COUNTRY" == "" ]; then
+  if [ "$WIFI_COUNTRY" = "" ]; then
     echo "- Guessing country (will only work if wired network)"
     # Use http instead of https because the clock may not yet be set properly.
     WIFI_COUNTRY="$(curl -fsSL http://ipinfo.io/country 2>/dev/null || true)"
     echo "  Guessed country as \"$WIFI_COUNTRY\""
   fi
   if [ "$WIFI_COUNTRY" != "" ]; then
-    if [ $BOARD = raspberrypi ]; then
+    if [ "$BOARD" = "raspberrypi" ]; then
       # Raspbian.
       # Set below.
       :
@@ -656,16 +656,13 @@ function do_all {
   fi
   wait_network
   do_apt
-  if [ $BOARD = beaglebone ]; then
+  if [ "$BOARD" = "beaglebone" ]; then
     do_beaglebone
-  fi
-  if [ $BOARD = chip ]; then
+  elif [ "$BOARD" = "chip" ]; then
     do_chip
-  fi
-  if [ $BOARD = odroid ]; then
+  elif [ "$BOARD" = "odroid" ]; then
     do_odroid
-  fi
-  if [ $BOARD = raspberrypi ]; then
+  elif [ "$BOARD" = "raspberrypi" ]; then
     do_raspberrypi
   fi
   do_ssh
@@ -752,7 +749,7 @@ function detect_board {
     # Fetching from ODROID's primary repository.
     BOARD=odroid
   fi
-  if [ $DIST = raspbian ]; then
+  if [ "$DIST" = "raspbian" ]; then
     BOARD=raspberrypi
   fi
   echo "  Detected board: $BOARD"

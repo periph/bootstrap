@@ -241,22 +241,16 @@ func firstBootArgs() string {
 // Since on Debian /etc/rc.local is mostly comments, it's large enough to be
 // safely overwritten.
 func modifyRoot(root *fileDisk) error {
-	// https://github.com/periph/bootstrap/issues/1
 	offset := int64(0)
 	prefix := []byte(oldRcLocal)
 	buf := make([]byte, 512)
 	for ; ; offset += 512 {
-		_, err := root.ReadAt(buf, offset)
-		if err != nil {
+		if _, err := root.ReadAt(buf, offset);err != nil {
 			return err
 		}
 		if bytes.Equal(buf[:len(prefix)], prefix) {
 			log.Printf("found /etc/rc.local at offset %d", offset)
 			break
-		}
-		if offset == 190275584 {
-			log.Printf("%q", string(buf[:len(prefix)]))
-			log.Printf("%q", string(prefix))
 		}
 	}
 	// TODO(maruel): Keep everything before the "exit 0" before our injected
