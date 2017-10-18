@@ -34,6 +34,7 @@ var (
 	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
 	sdCard       = flag.String("sdcard", getDefaultSDCard(), getSDCardHelp())
 	timeLocation = flag.String("time", img.GetTimeLocation(), "Location to use to define time")
+	postScript   = flag.String("post", "", "Command to run after setup is done")
 	v            = flag.Bool("v", false, "log verbosely")
 )
 
@@ -144,6 +145,15 @@ func modifyBoot(imgpath string, lbaStart uint32) error {
 			return err
 		}
 	}
+	if len(*postScript) != 0 {
+		b, err := ioutil.ReadFile(*postScript)
+		if err != nil {
+			return err
+		}
+		if _, err := docker(imgpath, lbaStart, string(b), "cat > /mnt/"+*postScript); err != nil {
+			return err
+		}
+	}
 	if *forceUART {
 		if err := raspbianEnableUART(imgpath, lbaStart); err != nil {
 			return err
@@ -169,7 +179,10 @@ func firstBootArgs() string {
 	}
 	if len(*wifiPass) != 0 {
 		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -wp %q", *wifiSSID, *wifiPass)
+		args += fmt.Sprintf(" -wp %q", *wifiPass)
+	}
+	if len(*postScript) != 0 {
+		args += fmt.Sprintf(" -- /boot/%s", filepath.Base(*postScript))
 	}
 	return args
 }

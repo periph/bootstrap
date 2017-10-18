@@ -875,6 +875,10 @@ while [ $# -gt 0 ]; do
     # not empty.
     shift
     ;;
+  "-h" | "--help" | "help")
+    show_help
+    exit 1
+    ;;
   "-kh" | "--keep-hdmi")
     echo "-> Keep HDMI enabled"
     KEEP_HDMI=1
@@ -886,10 +890,6 @@ while [ $# -gt 0 ]; do
   "-ng" | "--no-go")
     echo "-> Skip installing Go"
     ACTION_GO=0
-    ;;
-  "-h" | "--help" | "help")
-    show_help
-    exit 1
     ;;
   "-sk" | "--ssh-key")
     SSH_KEY=$1

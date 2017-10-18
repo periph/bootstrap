@@ -35,6 +35,7 @@ var (
 	skipFlash    = flag.Bool("skip-flash", false, "Skip download and flashing, just modify the image")
 	sdCard       = flag.String("sdcard", getDefaultSDCard(), getSDCardHelp())
 	timeLocation = flag.String("time", img.GetTimeLocation(), "Location to use to define time")
+	postScript   = flag.String("post", "", "Command to run after setup is done")
 	v            = flag.Bool("v", false, "log verbosely")
 	// Internal flags.
 	asRoot  = flag.Bool("as-root", false, "")
@@ -161,7 +162,10 @@ func firstBootArgs() string {
 	}
 	if len(*wifiPass) != 0 {
 		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -wp %q", *wifiSSID, *wifiPass)
+		args += fmt.Sprintf(" -wp %q", *wifiPass)
+	}
+	if len(*postScript) != 0 {
+		args += fmt.Sprintf(" -- /boot/%s", filepath.Base(*postScript))
 	}
 	return args
 }
@@ -170,6 +174,17 @@ func setupFirstBoot(boot, root string) error {
 	fmt.Printf("- First boot setup script\n")
 	if err := img.CopyFile(filepath.Join(boot, "firstboot.sh"), "setup.sh", 0755); err != nil {
 		return err
+	}
+	if len(*sshKey) != 0 {
+		// This assumes you have properly set your own ssh keys and plan to use them.
+		if err := img.CopyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
+			return err
+		}
+	}
+	if len(*postScript) != 0 {
+		if err := img.CopyFile(filepath.Join(boot, filepath.Base(*postScript)), *postScript, 0755); err != nil {
+			return err
+		}
 	}
 
 	// TODO(maruel): Edit /etc/rc.local directly in the disk image. Since on
@@ -188,13 +203,6 @@ func setupFirstBoot(boot, root string) error {
 	// the partition on first boot.
 	content := strings.TrimRightFunc(string(b), unicode.IsSpace)
 	content = strings.TrimSuffix(content, "exit 0")
-	if len(*sshKey) != 0 {
-		fmt.Printf("- SSH keys\n")
-		// This assumes you have properly set your own ssh keys and plan to use them.
-		if err := img.CopyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
-			return err
-		}
-	}
 	content += fmt.Sprintf(img.RcLocalContent, firstBootArgs())
 	log.Printf("Writing %q:\n%s", rcLocal, content)
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
@@ -330,10 +338,13 @@ func mainAsUser() error {
 		//"-distro", distro.Distro,
 		"-ssh-key", *sshKey,
 		"-img", imgpath, "-wifi-country", *wifiCountry, "-time", *timeLocation,
+		"-sdcard", *sdCard,
 	}
 	// Propagate optional flags.
 	if *wifiSSID != "" {
 		cmd = append(cmd, "--wifi-ssid", *wifiSSID)
+	}
+	if *wifiPass != "" {
 		cmd = append(cmd, "-wifi-pass", *wifiPass)
 	}
 	if *email != "" {
@@ -351,7 +362,9 @@ func mainAsUser() error {
 	if *v {
 		cmd = append(cmd, "-v")
 	}
-	cmd = append(cmd, "-sdcard", *sdCard)
+	if *postScript != "" {
+		cmd = append(cmd, "-post", *postScript)
+	}
 	//log.Printf("Running sudo %s", strings.Join(cmd, " "))
 	return img.Run("sudo", cmd...)
 }

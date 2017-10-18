@@ -44,6 +44,7 @@ var (
 	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
 	sdCard       = flag.String("sdcard", getDefaultSDCard(), getSDCardHelp())
 	timeLocation = flag.String("time", img.GetTimeLocation(), "Location to use to define time")
+	postScript   = flag.String("post", "", "Command to run after setup is done")
 	v            = flag.Bool("v", false, "log verbosely")
 )
 
@@ -181,8 +182,8 @@ func modifyImageInner(f *os.File) error {
 	return modifyRoot(d)
 }
 
-func modifyBoot(boot fs.Directory) error {
-	s, err := boot.AddFile("firstboot.sh")
+func addFile(p fs.Directory, dst, src string) error {
+	s, err := p.AddFile(dst)
 	if err != nil {
 		return err
 	}
@@ -190,24 +191,25 @@ func modifyBoot(boot fs.Directory) error {
 	if err != nil {
 		return err
 	}
-	if err = writeToFile(s2, "setup.sh"); err != nil {
+	return writeToFile(s2, src)
+}
+
+func modifyBoot(boot fs.Directory) error {
+	if err := addFile(boot, "firstboot.sh", "setup.sh"); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
-		s, err = boot.AddFile("authorized_keys")
-		if err != nil {
+		if err := addFile(boot, "authorized_keys", *sshKey); err != nil {
 			return err
 		}
-		s2, err = s.File()
-		if err != nil {
-			return err
-		}
-		if err = writeToFile(s2, *sshKey); err != nil {
+	}
+	if len(*postScript) != 0 {
+		if err := addFile(boot, filepath.Base(*postScript), *postScript); err != nil {
 			return err
 		}
 	}
 	if *forceUART {
-		if err = raspbianEnableUART(boot); err != nil {
+		if err := raspbianEnableUART(boot); err != nil {
 			return err
 		}
 	}
@@ -231,7 +233,10 @@ func firstBootArgs() string {
 	}
 	if len(*wifiPass) != 0 {
 		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -wp %q", *wifiSSID, *wifiPass)
+		args += fmt.Sprintf(" -wp %q", *wifiPass)
+	}
+	if len(*postScript) != 0 {
+		args += fmt.Sprintf(" -- /boot/%s", filepath.Base(*postScript))
 	}
 	return args
 }
@@ -245,7 +250,7 @@ func modifyRoot(root *fileDisk) error {
 	prefix := []byte(oldRcLocal)
 	buf := make([]byte, 512)
 	for ; ; offset += 512 {
-		if _, err := root.ReadAt(buf, offset);err != nil {
+		if _, err := root.ReadAt(buf, offset); err != nil {
 			return err
 		}
 		if bytes.Equal(buf[:len(prefix)], prefix) {
