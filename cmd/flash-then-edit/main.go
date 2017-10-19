@@ -89,7 +89,7 @@ func mount(p string) (string, error) {
 		// "Error mounting /dev/sdh2: GDBus.Error:org.freedesktop.UDisks2.Error.AlreadyMounted: Device /dev/sdh2"
 		// "is already mounted at `/media/<user>/<GUID>'.
 		re2 := regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
-		txt, _ := img.Capture("/usr/bin/udisksctl", "mount", "-b", p)
+		txt, _ := img.Capture("", "/usr/bin/udisksctl", "mount", "-b", p)
 		if match := re1.FindStringSubmatch(txt); len(match) != 0 {
 			return match[1], nil
 		}
@@ -114,7 +114,7 @@ func umount(p string) error {
 		for _, m := range matches {
 			if m != p {
 				log.Printf("- Unmounting %s", m)
-				if _, err1 := img.Capture("/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
+				if _, err1 := img.Capture("", "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
 					err = err1
 				}
 			}
