@@ -165,7 +165,7 @@ func firstBootArgs() string {
 		args += fmt.Sprintf(" -wp %q", *wifiPass)
 	}
 	if len(*postScript) != 0 {
-		args += fmt.Sprintf(" -- /boot/%s", filepath.Base(*postScript))
+		args += " -- /boot/" + filepath.Base(*postScript)
 	}
 	return args
 }

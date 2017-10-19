@@ -146,7 +146,7 @@ func modifyBoot(imgpath string, lbaStart uint32) error {
 		if err != nil {
 			return err
 		}
-		if _, err := docker(imgpath, lbaStart, string(b), "cat > /mnt/"+*postScript); err != nil {
+		if _, err := docker(imgpath, lbaStart, string(b), "cat > /mnt/"+filepath.Base(*postScript)); err != nil {
 			return err
 		}
 	}
@@ -178,7 +178,7 @@ func firstBootArgs() string {
 		args += fmt.Sprintf(" -wp %q", *wifiPass)
 	}
 	if len(*postScript) != 0 {
-		args += fmt.Sprintf(" -- /boot/%s", filepath.Base(*postScript))
+		args += " -- /boot/" + filepath.Base(*postScript)
 	}
 	return args
 }
