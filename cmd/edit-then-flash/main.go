@@ -194,8 +194,8 @@ func addFile(p fs.Directory, dst, src string) error {
 	return writeToFile(s2, src)
 }
 
-func modifyBoot(boot fs.Directory) error {
-	s, err := boot.AddFile("firstboot.sh")
+func writeFile(p fs.Directory, dst string, content []byte) error {
+	s, err := p.AddFile(dst)
 	if err != nil {
 		return err
 	}
@@ -203,21 +203,33 @@ func modifyBoot(boot fs.Directory) error {
 	if err != nil {
 		return err
 	}
-	if _, err = s2.Write(img.GetSetupSH()); err != nil {
+	_, err = s2.Write(content)
+	return err
+}
+
+func modifyBoot(boot fs.Directory) error {
+	if err := writeFile(boot, "firstboot.sh", img.GetSetupSH()); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
-		if err = addFile(boot, "authorized_keys", *sshKey); err != nil {
+		if err := addFile(boot, "authorized_keys", *sshKey); err != nil {
 			return err
 		}
 	}
 	if len(*postScript) != 0 {
-		if err = addFile(boot, filepath.Base(*postScript), *postScript); err != nil {
+		if err := addFile(boot, filepath.Base(*postScript), *postScript); err != nil {
 			return err
 		}
 	}
 	if *forceUART {
-		if err = raspbianEnableUART(boot); err != nil {
+		if err := raspbianEnableUART(boot); err != nil {
+			return err
+		}
+	}
+	// TODO(maruel): RaspberryPi != Raspbian.
+	if distro.Manufacturer == img.RaspberryPi && len(*wifiSSID) != 0 {
+		c := fmt.Sprintf(img.RaspberryPiWPASupplicant, *wifiCountry, *wifiSSID, *wifiPass)
+		if err := writeFile(boot, "wpa_supplicant.conf", []byte(c)); err != nil {
 			return err
 		}
 	}
@@ -225,7 +237,7 @@ func modifyBoot(boot fs.Directory) error {
 }
 
 func firstBootArgs() string {
-	args := " -t " + *timeLocation + " -wc " + *wifiCountry
+	args := " -t " + *timeLocation
 	if len(*email) != 0 {
 		args += " -e " + *email
 	}
@@ -235,13 +247,17 @@ func firstBootArgs() string {
 	if len(*sshKey) != 0 {
 		args += " -sk /boot/authorized_keys"
 	}
-	if len(*wifiSSID) != 0 {
-		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -ws %q", *wifiSSID)
-	}
-	if len(*wifiPass) != 0 {
-		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -wp %q", *wifiPass)
+	// TODO(maruel): RaspberryPi != Raspbian.
+	if distro.Manufacturer != img.RaspberryPi {
+		args += " -wc " + *wifiCountry
+		if len(*wifiSSID) != 0 {
+			// TODO(maruel): Proper shell escaping.
+			args += fmt.Sprintf(" -ws %q", *wifiSSID)
+		}
+		if len(*wifiPass) != 0 {
+			// TODO(maruel): Proper shell escaping.
+			args += fmt.Sprintf(" -wp %q", *wifiPass)
+		}
 	}
 	if len(*postScript) != 0 {
 		args += " -- /boot/" + filepath.Base(*postScript)

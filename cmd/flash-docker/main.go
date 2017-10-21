@@ -155,11 +155,18 @@ func modifyBoot(imgpath string, lbaStart uint32) error {
 			return err
 		}
 	}
+	// TODO(maruel): RaspberryPi != Raspbian.
+	if distro.Manufacturer == img.RaspberryPi && len(*wifiSSID) != 0 {
+		c := fmt.Sprintf(img.RaspberryPiWPASupplicant, *wifiCountry, *wifiSSID, *wifiPass)
+		if _, err := docker(imgpath, lbaStart, c, "cat > /mnt/wpa_supplicant.conf"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func firstBootArgs() string {
-	args := " -t " + *timeLocation + " -wc " + *wifiCountry
+	args := " -t " + *timeLocation
 	if len(*email) != 0 {
 		args += " -e " + *email
 	}
@@ -169,13 +176,17 @@ func firstBootArgs() string {
 	if len(*sshKey) != 0 {
 		args += " -sk /boot/authorized_keys"
 	}
-	if len(*wifiSSID) != 0 {
-		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -ws %q", *wifiSSID)
-	}
-	if len(*wifiPass) != 0 {
-		// TODO(maruel): Proper shell escaping.
-		args += fmt.Sprintf(" -wp %q", *wifiPass)
+	// TODO(maruel): RaspberryPi != Raspbian.
+	if distro.Manufacturer != img.RaspberryPi {
+		args += " -wc " + *wifiCountry
+		if len(*wifiSSID) != 0 {
+			// TODO(maruel): Proper shell escaping.
+			args += fmt.Sprintf(" -ws %q", *wifiSSID)
+		}
+		if len(*wifiPass) != 0 {
+			// TODO(maruel): Proper shell escaping.
+			args += fmt.Sprintf(" -wp %q", *wifiPass)
+		}
 	}
 	if len(*postScript) != 0 {
 		args += " -- /boot/" + filepath.Base(*postScript)
