@@ -362,7 +362,7 @@ function do_golang {
 
   # Magically figure out latest version for precompiled binaries.
   echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME}"
-  URL=`curl -sS https://golang.org/dl/ | grep -Po "https://storage\.googleapis\.com/golang/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
+  URL=`curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
   FILENAME=`echo ${URL} | cut -d / -f 5`
 
   # TODO(maruel): If current == new, skip. This permits running this script
@@ -370,13 +370,13 @@ function do_golang {
   # local CURRENT=$(go version | cut -f 3 -d ' ' | cut -c 3-)
 
   # The non-guesswork version:
-  #BASE_URL=https://storage.googleapis.com/golang/
-  #GO_VERSION=1.8.3
+  #BASE_URL=https://redirector.gvt1.com/edgedl/go/
+  #GO_VERSION=1.9.2
   #FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
   #URL=${BASE_URL}/${FILENAME}
   echo "  Fetching $URL"
   echo "    as $FILENAME"
-  run curl -o $FILENAME -sS $URL
+  run curl -L -o $FILENAME -sS $URL
   if [ -d /usr/local/go ]; then
     echo "  Removing previous version in /usr/local/go"
     run sudo rm -rf /usr/local/go
