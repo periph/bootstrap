@@ -668,6 +668,20 @@ EOF
 }
 
 
+function do_sudo {
+  echo "- do_sudo: Makes the default user a passwordless sudoer"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # This file is already present on Raspbian.
+  if [ ! -f /etc/sudoers.d/010_$USERNAME-nopasswd ]; then
+    sudo_write_file /etc/sudoers.d/010_$USERNAME-nopasswd <<EOF
+      $USERNAME ALL=(ALL) NOPASSWD: ALL
+EOF
+    chmod 0660 /etc/sudoers.d/010_$USERNAME-nopasswd
+  fi
+}
+
+
 function do_all {
   echo "- do_all: Runs all default installation steps"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
@@ -703,6 +717,8 @@ function do_all {
     do_sendmail
   fi
   do_timezone
+  #do_sudo
+  #do_swap
   do_update_motd
 }
 
