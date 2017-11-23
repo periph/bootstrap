@@ -13,9 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -78,52 +76,6 @@ func chownRecursive(path string, uid, gid int) error {
 }
 
 //
-
-// mount mounts a partition and returns the mount path.
-func mount(p string) (string, error) {
-	fmt.Printf("- Mounting %s\n", p)
-	switch runtime.GOOS {
-	case "linux":
-		// "Mounted /dev/sdh2 at /media/<user>/<GUID>."
-		re1 := regexp.MustCompile(`Mounted (?:[^ ]+) at ([^\\]+)\..*`)
-		// "Error mounting /dev/sdh2: GDBus.Error:org.freedesktop.UDisks2.Error.AlreadyMounted: Device /dev/sdh2"
-		// "is already mounted at `/media/<user>/<GUID>'.
-		re2 := regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
-		txt, _ := img.Capture("", "/usr/bin/udisksctl", "mount", "-b", p)
-		if match := re1.FindStringSubmatch(txt); len(match) != 0 {
-			return match[1], nil
-		}
-		if match := re2.FindStringSubmatch(txt); len(match) != 0 {
-			return match[1], nil
-		}
-		return "", fmt.Errorf("failed to mount %q: %q", p, txt)
-	default:
-		return "", errors.New("mount() is not implemented on this OS")
-	}
-}
-
-// umount unmounts all the partitions on disk 'p'.
-func umount(p string) error {
-	switch runtime.GOOS {
-	case "linux":
-		matches, err := filepath.Glob(p + "*")
-		if err != nil {
-			return err
-		}
-		sort.Strings(matches)
-		for _, m := range matches {
-			if m != p {
-				log.Printf("- Unmounting %s", m)
-				if _, err1 := img.Capture("", "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
-					err = err1
-				}
-			}
-		}
-		return nil
-	default:
-		return errors.New("umount() is not implemented on this OS")
-	}
-}
 
 // Editing image code
 
@@ -224,7 +176,7 @@ func flash(imgPath, dst string) error {
 	switch runtime.GOOS {
 	case "linux":
 		fmt.Printf("- Unmounting\n")
-		if err := umount(dst); err != nil {
+		if err := img.Umount(dst); err != nil {
 			return err
 		}
 		if err := img.Flash(imgPath, dst); err != nil {
@@ -277,15 +229,15 @@ func mainAsRoot() error {
 		if strings.Contains(p, "mmcblk") {
 			p += "p"
 		}
-		if err = umount(*sdCard); err != nil {
+		if err = img.Umount(*sdCard); err != nil {
 			return err
 		}
-		boot, err = mount(p + "1")
+		boot, err = img.Mount(p + "1")
 		if err != nil {
 			return err
 		}
 		fmt.Printf("  /boot mounted as %s\n", boot)
-		root, err = mount(p + "2")
+		root, err = img.Mount(p + "2")
 		if err != nil {
 			return err
 		}
@@ -309,7 +261,7 @@ func mainAsRoot() error {
 		if err = img.Run("sync"); err != nil {
 			return err
 		}
-		if err = umount(*sdCard); err != nil {
+		if err = img.Umount(*sdCard); err != nil {
 			return err
 		}
 	default:

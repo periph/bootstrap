@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/DHowett/go-plist"
@@ -165,6 +166,57 @@ func Capture(in, name string, arg ...string) (string, error) {
 	cmd.Stdin = strings.NewReader(in)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+var (
+	// "Mounted /dev/sdh2 at /media/<user>/<GUID>."
+	reMountLinux1 = regexp.MustCompile(`Mounted (?:[^ ]+) at ([^\\]+)\..*`)
+	// "Error mounting /dev/sdh2: GDBus.Error:org.freedesktop.UDisks2.Error.AlreadyMounted: Device /dev/sdh2"
+	// "is already mounted at `/media/<user>/<GUID>'.
+	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
+)
+
+// Mount mounts a partition and returns the mount path.
+func Mount(p string) (string, error) {
+	switch runtime.GOOS {
+	case "linux":
+		// TODO(maruel): This assumes Ubuntu.
+		log.Printf("- Mounting %s", m)
+		txt, _ := Capture("", "/usr/bin/udisksctl", "mount", "-b", p)
+		if match := reMountLinux1.FindStringSubmatch(txt); len(match) != 0 {
+			return match[1], nil
+		}
+		if match := reMountLinux2.FindStringSubmatch(txt); len(match) != 0 {
+			return match[1], nil
+		}
+		return "", fmt.Errorf("failed to mount %q: %q", p, txt)
+	default:
+		return "", errors.New("Mount() is not implemented on this OS")
+	}
+}
+
+// Umount unmounts all the partitions on disk 'p'.
+func Umount(p string) error {
+	switch runtime.GOOS {
+	case "linux":
+		// TODO(maruel): This assumes Ubuntu.
+		matches, err := filepath.Glob(p + "*")
+		if err != nil {
+			return err
+		}
+		sort.Strings(matches)
+		for _, m := range matches {
+			if m != p {
+				log.Printf("- Unmounting %s", m)
+				if _, err1 := Capture("", "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
+					err = err1
+				}
+			}
+		}
+		return nil
+	default:
+		return errors.New("Umount() is not implemented on this OS")
+	}
 }
 
 //
