@@ -114,8 +114,20 @@ func ddFlash(imgPath, dst string) error {
 	if err := Run("sudo", "dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if="+imgPath, "of="+dst); err != nil {
 		return err
 	}
+	if runtime.GOOS != "darwin" {
+		// Tells the OS to wake up with the fact that the partitions changed. It's
+		// fine even if the cache is not written to the disk yet, as the cached
+		// data is in the OS cache. :)
+		if err := Run("sudo", "partprobe"); err != nil {
+			return err
+		}
+	}
+	// This step may take a while for writeback cache.
 	fmt.Printf("- Flushing I/O cache\n")
-	return Run("sudo", "sync")
+	if err := Run("sudo", "sync"); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Flash flashes imgPath to dst.
@@ -181,7 +193,7 @@ func Mount(p string) (string, error) {
 	switch runtime.GOOS {
 	case "linux":
 		// TODO(maruel): This assumes Ubuntu.
-		log.Printf("- Mounting %s", m)
+		log.Printf("- Mounting %s", p)
 		txt, _ := Capture("", "/usr/bin/udisksctl", "mount", "-b", p)
 		if match := reMountLinux1.FindStringSubmatch(txt); len(match) != 0 {
 			return match[1], nil

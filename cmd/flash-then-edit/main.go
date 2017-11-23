@@ -182,17 +182,8 @@ func flash(imgPath, dst string) error {
 		if err := img.Flash(imgPath, dst); err != nil {
 			return err
 		}
-		// This is important otherwise the mount afterward may 'see' the old partition
-		// table.
-		fmt.Printf("- Reloading partition table\n")
 		// Wait a bit to try to workaround "Error looking up object for device" when
 		// immediately using "/usr/bin/udisksctl mount" after this script.
-		if err := img.Run("partprobe"); err != nil {
-			return err
-		}
-		if err := img.Run("sync"); err != nil {
-			return err
-		}
 		time.Sleep(time.Second)
 		// Needs suffix 'p' for /dev/mmcblkN but not for /dev/sdX
 		p := dst
@@ -255,17 +246,8 @@ func mainAsRoot() error {
 		}
 	}
 
-	switch runtime.GOOS {
-	case "linux":
-		fmt.Printf("- Unmounting\n")
-		if err = img.Run("sync"); err != nil {
-			return err
-		}
-		if err = img.Umount(*sdCard); err != nil {
-			return err
-		}
-	default:
-		return errors.New("flash() is not implemented on this OS")
+	if err = img.Umount(*sdCard); err != nil {
+		return err
 	}
 	fmt.Printf("\nYou can now remove the SDCard safely and boot your Micro computer\n")
 	fmt.Printf("Connect with:\n")
