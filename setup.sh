@@ -363,7 +363,7 @@ function do_golang {
   # Magically figure out latest version for precompiled binaries.
   echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME}"
   URL=`curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
-  FILENAME=`echo ${URL} | cut -d / -f 5`
+  FILENAME=`basename ${URL}`
 
   # TODO(maruel): If current == new, skip. This permits running this script
   # nightly.
