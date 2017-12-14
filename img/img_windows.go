@@ -13,7 +13,7 @@ func flashWindows(imgPath, disk string) error {
 }
 
 func mountWindows(disk string, n int) (string, error) {
-	return errors.New("Mount() is not implemented on Windows")
+	return nil, errors.New("Mount() is not implemented on Windows")
 }
 
 func umountWindows(disk string) error {
