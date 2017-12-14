@@ -2,7 +2,14 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
-// Package img implements image related functionality.
+// Package img implements OS image related functionality for micro computers.
+//
+// It includes fetching images and flashing them on an SDCard.
+//
+// It includes gathering environmental information, like the current country
+// and location on the host to enable configuring the board with the same
+// settings.
+//
 package img // import "periph.io/x/bootstrap/img"
 
 import (
@@ -20,6 +27,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/DHowett/go-plist"
 )
@@ -108,36 +116,51 @@ func ListSDCards() []string {
 	}
 }
 
-func ddFlash(imgPath, dst string) error {
-	fmt.Printf("- Flashing (takes 2 minutes)\n")
-	// OSX uses 'M' but Ubuntu uses 'm'.
-	if err := Run("sudo", "dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if="+imgPath, "of="+dst); err != nil {
-		return err
+// Flash flashes imgPath to disk.
+//
+// Before flashing, it unmounts any partition mounted on disk.
+func Flash(imgPath, disk string) error {
+	if err := Umount(disk); err != nil {
+		return nil
 	}
-	if runtime.GOOS != "darwin" {
-		// Tells the OS to wake up with the fact that the partitions changed. It's
-		// fine even if the cache is not written to the disk yet, as the cached
-		// data is in the OS cache. :)
-		if err := Run("sudo", "partprobe"); err != nil {
-			return err
-		}
-	}
-	// This step may take a while for writeback cache.
-	fmt.Printf("- Flushing I/O cache\n")
-	if err := Run("sudo", "sync"); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Flash flashes imgPath to dst.
-func Flash(imgPath, dst string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		_, _ = Capture("", "diskutil", "unmountDisk", dst)
-		return ddFlash(imgPath, dst)
+		if err := ddFlash(imgPath, toRawDiskOSX(disk)); err != nil {
+			return err
+		}
+		time.Sleep(time.Second)
+		// Assumes this image has at least one partition.
+		p := disk + "s1"
+		for {
+			if _, err := os.Stat(p); err == nil {
+				break
+			}
+			fmt.Printf(" (still waiting for partition %s to show up)\n", p)
+			time.Sleep(time.Second)
+		}
+		return nil
 	case "linux":
-		return ddFlash(imgPath, dst)
+		if err := ddFlash(imgPath, disk); err != nil {
+			return err
+		}
+		// Wait a bit to try to workaround "Error looking up object for device" when
+		// immediately using "/usr/bin/udisksctl mount" after this script.
+		time.Sleep(time.Second)
+		// Needs suffix 'p' for /dev/mmcblkN but not for /dev/sdX
+		p := disk
+		if strings.Contains(p, "mmcblk") {
+			p += "p"
+		}
+		// Assumes this image has at least one partition.
+		p += "1"
+		for {
+			if _, err := os.Stat(p); err == nil {
+				break
+			}
+			fmt.Printf(" (still waiting for partition %s to show up)\n", p)
+			time.Sleep(time.Second)
+		}
+		return nil
 	default:
 		return errors.New("Flash() is not implemented on this OS")
 	}
@@ -180,45 +203,76 @@ func Capture(in, name string, arg ...string) (string, error) {
 	return string(out), err
 }
 
-var (
-	// "Mounted /dev/sdh2 at /media/<user>/<GUID>."
-	reMountLinux1 = regexp.MustCompile(`Mounted (?:[^ ]+) at ([^\\]+)\..*`)
-	// "Error mounting /dev/sdh2: GDBus.Error:org.freedesktop.UDisks2.Error.AlreadyMounted: Device /dev/sdh2"
-	// "is already mounted at `/media/<user>/<GUID>'.
-	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
-)
-
-// Mount mounts a partition and returns the mount path.
-func Mount(p string) (string, error) {
+// Mount mounts a partition number n on disk p and returns the mount path.
+func Mount(disk string, n int) (string, error) {
 	switch runtime.GOOS {
+	case "darwin":
+		// diskutil doesn't report which volume was mounted, so look at the ones
+		// before and the ones after and hope for the best.
+		before, err := getMountedVolumesOSX()
+		if err != nil {
+			return "", err
+		}
+		mnt := fmt.Sprintf("%ss%d", disk, n)
+		log.Printf("- Mounting %s", mnt)
+		if _, err = Capture("", "diskutil", "mountDisk", mnt); err != nil {
+			return "", err
+		}
+		after, err := getMountedVolumesOSX()
+		if err != nil {
+			return "", err
+		}
+		if len(before)+1 != len(after) {
+			return "", errors.New("unexpected number of mounted drives")
+		}
+		found := ""
+		for i, a := range after {
+			if i == len(before) || a != before[i] {
+				found = "/Volumes/" + a
+				break
+			}
+		}
+		log.Printf("  Mounted as %s", found)
+		return found, nil
 	case "linux":
+		// Needs 'p' for /dev/mmcblkN but not for /dev/sdX
+		if strings.Contains(disk, "mmcblk") {
+			disk += "p"
+		}
+		mnt := fmt.Sprintf("%s%d", disk, n)
+		log.Printf("- Mounting %s", mnt)
 		// TODO(maruel): This assumes Ubuntu.
-		log.Printf("- Mounting %s", p)
-		txt, _ := Capture("", "/usr/bin/udisksctl", "mount", "-b", p)
+		txt, _ := Capture("", "/usr/bin/udisksctl", "mount", "-b", mnt)
 		if match := reMountLinux1.FindStringSubmatch(txt); len(match) != 0 {
+			log.Printf("  Mounted as %s", match[1])
 			return match[1], nil
 		}
 		if match := reMountLinux2.FindStringSubmatch(txt); len(match) != 0 {
+			log.Printf("  Mounted as %s", match[1])
 			return match[1], nil
 		}
-		return "", fmt.Errorf("failed to mount %q: %q", p, txt)
+		return "", fmt.Errorf("failed to mount %q: %q", mnt, txt)
 	default:
 		return "", errors.New("Mount() is not implemented on this OS")
 	}
 }
 
-// Umount unmounts all the partitions on disk 'p'.
-func Umount(p string) error {
+// Umount unmounts all the partitions on disk 'disk'.
+func Umount(disk string) error {
 	switch runtime.GOOS {
+	case "darwin":
+		log.Printf("- Unmounting %s", disk)
+		_, _ = Capture("", "diskutil", "unmountDisk", disk)
+		return nil
 	case "linux":
-		// TODO(maruel): This assumes Ubuntu.
-		matches, err := filepath.Glob(p + "*")
+		matches, err := filepath.Glob(disk + "*")
 		if err != nil {
 			return err
 		}
 		sort.Strings(matches)
 		for _, m := range matches {
-			if m != p {
+			if m != disk {
+				// TODO(maruel): This assumes Ubuntu.
 				log.Printf("- Unmounting %s", m)
 				if _, err1 := Capture("", "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
 					err = err1
@@ -239,6 +293,38 @@ func getHome() string {
 	}
 	return os.Getenv("HOME")
 }
+
+func ddFlash(imgPath, dst string) error {
+	fmt.Printf("- Flashing (takes 2 minutes)\n")
+	// OSX uses 'M' but Ubuntu uses 'm' but using numbers works everywhere.
+	if err := Run("sudo", "dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if="+imgPath, "of="+dst); err != nil {
+		return err
+	}
+	if runtime.GOOS != "darwin" {
+		// Tells the OS to wake up with the fact that the partitions changed. It's
+		// fine even if the cache is not written to the disk yet, as the cached
+		// data is in the OS cache. :)
+		if err := Run("sudo", "partprobe"); err != nil {
+			return err
+		}
+	}
+	// This step may take a while for writeback cache.
+	fmt.Printf("- Flushing I/O cache\n")
+	if err := Run("sudo", "sync"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Linux
+
+var (
+	// "Mounted /dev/sdh2 at /media/<user>/<GUID>."
+	reMountLinux1 = regexp.MustCompile(`Mounted (?:[^ ]+) at ([^\\]+)\..*`)
+	// "Error mounting /dev/sdh2: GDBus.Error:org.freedesktop.UDisks2.Error.AlreadyMounted: Device /dev/sdh2"
+	// "is already mounted at `/media/<user>/<GUID>'.
+	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
+)
 
 type lsblk struct {
 	BlockDevices []struct {
@@ -270,6 +356,8 @@ func listSDCardsLinux() []string {
 	}
 	return out
 }
+
+// OSX
 
 type diskutilList struct {
 	AllDisks              []string
@@ -338,7 +426,7 @@ func listSDCardsOSX() []string {
 	if err != nil {
 		return nil
 	}
-	out := []string{}
+	var out []string
 	for _, d := range disks.WholeDisks {
 		b, err = Capture("", "diskutil", "info", "-plist", d)
 		if err != nil {
@@ -350,10 +438,40 @@ func listSDCardsOSX() []string {
 			continue
 		}
 		if info.RemovableMedia && info.Writable {
-			// rdisk is faster than disk so construct it manually instead of using
-			// info.DeviceNode.
-			out = append(out, "/dev/r"+d)
+			out = append(out, info.DeviceNode)
 		}
 	}
 	return out
+}
+
+// toRawDiskOSX replaces a path to a buffered disk to the raw equivalent device
+// node.
+//
+// rdisk is several times faster than disk.
+func toRawDiskOSX(p string) string {
+	const prefix = "/dev/disk"
+	if strings.HasPrefix(p, prefix) {
+		return "/dev/rdisk" + p[len(prefix):]
+	}
+	return p
+}
+
+func getMountedVolumesOSX() ([]string, error) {
+	f, err := os.Open("/Volumes")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	all, err := f.Readdir(-1)
+	if err != nil {
+		return nil, err
+	}
+	var actual []string
+	for _, f := range all {
+		if f.Mode()&os.ModeSymlink == 0 {
+			actual = append(actual, f.Name())
+		}
+	}
+	sort.Strings(actual)
+	return actual, nil
 }

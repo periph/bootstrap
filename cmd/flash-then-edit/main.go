@@ -13,9 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"time"
 	"unicode"
 
 	"periph.io/x/bootstrap/img"
@@ -171,71 +169,25 @@ func setupFirstBoot(boot, root string) error {
 	return ioutil.WriteFile(rcLocal, []byte(content), 0755)
 }
 
-// flash flashes imgPath to dst.
-func flash(imgPath, dst string) error {
-	switch runtime.GOOS {
-	case "linux":
-		fmt.Printf("- Unmounting\n")
-		if err := img.Umount(dst); err != nil {
-			return err
-		}
-		if err := img.Flash(imgPath, dst); err != nil {
-			return err
-		}
-		// Wait a bit to try to workaround "Error looking up object for device" when
-		// immediately using "/usr/bin/udisksctl mount" after this script.
-		time.Sleep(time.Second)
-		// Needs suffix 'p' for /dev/mmcblkN but not for /dev/sdX
-		p := dst
-		if strings.Contains(p, "mmcblk") {
-			p += "p"
-		}
-		p += "2"
-		for {
-			if _, err := os.Stat(p); err == nil {
-				break
-			}
-			fmt.Printf(" (still waiting for partition %s to show up)", p)
-			time.Sleep(time.Second)
-		}
-		fmt.Printf("- \n")
-		return nil
-	default:
-		return errors.New("flash() is not implemented on this OS")
-	}
-}
-
 func mainAsRoot() error {
 	if !*skipFlash {
-		if err := flash(*imgFlag, *sdCard); err != nil {
+		if err := img.Flash(*imgFlag, *sdCard); err != nil {
 			return err
 		}
 	}
-	var root, boot string
-	var err error
-	switch runtime.GOOS {
-	case "linux":
-		// Needs 'p' for /dev/mmcblkN but not for /dev/sdX
-		p := *sdCard
-		if strings.Contains(p, "mmcblk") {
-			p += "p"
-		}
-		if err = img.Umount(*sdCard); err != nil {
-			return err
-		}
-		boot, err = img.Mount(p + "1")
-		if err != nil {
-			return err
-		}
-		fmt.Printf("  /boot mounted as %s\n", boot)
-		root, err = img.Mount(p + "2")
-		if err != nil {
-			return err
-		}
-		fmt.Printf("  / mounted as %s\n", root)
-	default:
-		return errors.New("flash() is not implemented on this OS")
+	if err := img.Umount(*sdCard); err != nil {
+		return err
 	}
+	boot, err := img.Mount(*sdCard, 1)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  /boot mounted as %s\n", boot)
+	root, err := img.Mount(*sdCard, 2)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  / mounted as %s\n", root)
 
 	if err = setupFirstBoot(boot, root); err != nil {
 		return err
