@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -166,43 +165,6 @@ func Flash(imgPath, disk string) error {
 	}
 }
 
-// CopyFile copies src from dst.
-func CopyFile(dst, src string, mode os.FileMode) error {
-	fs, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer fs.Close()
-	fd, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(fd, fs); err != nil {
-		fd.Close()
-		return err
-	}
-	return fd.Close()
-}
-
-// Run runs a command.
-func Run(name string, arg ...string) error {
-	log.Printf("Run(%s %s)", name, strings.Join(arg, " "))
-	cmd := exec.Command(name, arg...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// Capture runs a command and return the stdout and stderr merged.
-func Capture(in, name string, arg ...string) (string, error) {
-	//log.Printf("Capture(%s %s)", name, strings.Join(arg, " "))
-	cmd := exec.Command(name, arg...)
-	cmd.Stdin = strings.NewReader(in)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
 // Mount mounts a partition number n on disk p and returns the mount path.
 func Mount(disk string, n int) (string, error) {
 	switch runtime.GOOS {
@@ -215,7 +177,7 @@ func Mount(disk string, n int) (string, error) {
 		}
 		mnt := fmt.Sprintf("%ss%d", disk, n)
 		log.Printf("- Mounting %s", mnt)
-		if _, err = Capture("", "diskutil", "mountDisk", mnt); err != nil {
+		if _, err = capture("", "diskutil", "mountDisk", mnt); err != nil {
 			return "", err
 		}
 		after, err := getMountedVolumesOSX()
@@ -242,7 +204,7 @@ func Mount(disk string, n int) (string, error) {
 		mnt := fmt.Sprintf("%s%d", disk, n)
 		log.Printf("- Mounting %s", mnt)
 		// TODO(maruel): This assumes Ubuntu.
-		txt, _ := Capture("", "/usr/bin/udisksctl", "mount", "-b", mnt)
+		txt, _ := capture("", "/usr/bin/udisksctl", "mount", "-b", mnt)
 		if match := reMountLinux1.FindStringSubmatch(txt); len(match) != 0 {
 			log.Printf("  Mounted as %s", match[1])
 			return match[1], nil
@@ -262,7 +224,7 @@ func Umount(disk string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		log.Printf("- Unmounting %s", disk)
-		_, _ = Capture("", "diskutil", "unmountDisk", disk)
+		_, _ = capture("", "diskutil", "unmountDisk", disk)
 		return nil
 	case "linux":
 		matches, err := filepath.Glob(disk + "*")
@@ -274,7 +236,7 @@ func Umount(disk string) error {
 			if m != disk {
 				// TODO(maruel): This assumes Ubuntu.
 				log.Printf("- Unmounting %s", m)
-				if _, err1 := Capture("", "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
+				if _, err1 := capture("", "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
 					err = err1
 				}
 			}
@@ -287,6 +249,25 @@ func Umount(disk string) error {
 
 //
 
+// run runs a command.
+func run(name string, arg ...string) error {
+	log.Printf("run(%s %s)", name, strings.Join(arg, " "))
+	cmd := exec.Command(name, arg...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// capture runs a command and return the stdout and stderr merged.
+func capture(in, name string, arg ...string) (string, error) {
+	//log.Printf("capture(%s %s)", name, strings.Join(arg, " "))
+	cmd := exec.Command(name, arg...)
+	cmd.Stdin = strings.NewReader(in)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 func getHome() string {
 	if usr, err := user.Current(); err == nil && len(usr.HomeDir) != 0 {
 		return usr.HomeDir
@@ -297,20 +278,20 @@ func getHome() string {
 func ddFlash(imgPath, dst string) error {
 	fmt.Printf("- Flashing (takes 2 minutes)\n")
 	// OSX uses 'M' but Ubuntu uses 'm' but using numbers works everywhere.
-	if err := Run("sudo", "dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if="+imgPath, "of="+dst); err != nil {
+	if err := run("sudo", "dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if="+imgPath, "of="+dst); err != nil {
 		return err
 	}
 	if runtime.GOOS != "darwin" {
 		// Tells the OS to wake up with the fact that the partitions changed. It's
 		// fine even if the cache is not written to the disk yet, as the cached
 		// data is in the OS cache. :)
-		if err := Run("sudo", "partprobe"); err != nil {
+		if err := run("sudo", "partprobe"); err != nil {
 			return err
 		}
 	}
 	// This step may take a while for writeback cache.
 	fmt.Printf("- Flushing I/O cache\n")
-	if err := Run("sudo", "sync"); err != nil {
+	if err := run("sudo", "sync"); err != nil {
 		return err
 	}
 	return nil
@@ -339,7 +320,7 @@ type lsblk struct {
 }
 
 func listSDCardsLinux() []string {
-	b, err := Capture("", "lsblk", "--json")
+	b, err := capture("", "lsblk", "--json")
 	if err != nil {
 		return nil
 	}
@@ -417,7 +398,7 @@ type diskutilInfo struct {
 }
 
 func listSDCardsOSX() []string {
-	b, err := Capture("", "diskutil", "list", "-plist")
+	b, err := capture("", "diskutil", "list", "-plist")
 	if err != nil {
 		return nil
 	}
@@ -428,7 +409,7 @@ func listSDCardsOSX() []string {
 	}
 	var out []string
 	for _, d := range disks.WholeDisks {
-		b, err = Capture("", "diskutil", "info", "-plist", d)
+		b, err = capture("", "diskutil", "info", "-plist", d)
 		if err != nil {
 			continue
 		}
