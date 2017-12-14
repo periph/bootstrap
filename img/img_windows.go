@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -46,11 +47,18 @@ type storageDeviceNumber struct {
 //
 // 'disk' is expected to be of format "\\\\.\\physicaldriveN"
 func flashWindows(imgPath, disk string) error {
+	// TODO(maruel): It'd be worth opening with FILE_FLAG_SEQUENTIAL_SCAN but Go
+	// stdlib doesn't allow this.
 	fi, err := os.Open(imgPath)
 	if err != nil {
 		return err
 	}
 	defer fi.Close()
+	i, err := fi.Stat()
+	if err != nil {
+		return err
+	}
+	s := float64(i.Size())
 
 	var dummy uint32
 	var handles []syscall.Handle
@@ -100,10 +108,12 @@ func flashWindows(imgPath, disk string) error {
 			syscall.CloseHandle(fd)
 		}
 	}()
-	// Use manual buffer instead of io.Copy() to control buffer size. 1Mb should
-	// be a multiple of all common sector sizes, generally 4Kb or 8Kb.
-	var b [1024 * 1024]byte
-	for {
+	// Use manual buffer instead of io.Copy() to control buffer size. 64Kb should
+	// be a multiple of all common sector sizes, generally 4Kb or 8Kb and it
+	// should work better with the Windows' read-ahead mechanism.
+	var b [64 * 1024]byte
+	fmt.Printf("\n")
+	for o := int64(0); ; {
 		n, err := fi.Read(b[:])
 		if err == io.EOF {
 			break
@@ -118,7 +128,10 @@ func flashWindows(imgPath, disk string) error {
 		if nw != n {
 			return errors.New("buffer underflow")
 		}
+		o += int64(nw)
+		fmt.Printf("\r%.1f%%", float64(o)*100./s)
 	}
+	fmt.Printf("\r100.0%%\n")
 	// Refresh partition table.
 	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa365192.aspx
 	err = syscall.DeviceIoControl(fd, ioctlDiskUpdateProperties, nil, 0, nil, 0, &dummy, nil)
@@ -126,15 +139,43 @@ func flashWindows(imgPath, disk string) error {
 		return fmt.Errorf("failed to refresh partition table on %s: %v", disk, err)
 	}
 	closed = true
-	return syscall.CloseHandle(fd)
+	if err := syscall.CloseHandle(fd); err != nil {
+		return err
+	}
+	// Closing the handle implicitly removes the lock. It is needed, otherwise
+	// the new volumes won't appear.
+	for _, h := range handles {
+		syscall.CloseHandle(h)
+	}
+	handles = nil
+
+	// It will take a moment for the volumes to appear. Enforce a "sleep" by
+	// calling mountWindows() for a few seconds until it succeeds.
+	for start := time.Now(); time.Since(start) < 15*time.Second; {
+		if _, err := mountWindows(disk, 1); err == nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// Still return nil, but mountWindows() will likely fail.
+	return nil
 }
 
+// mountWindows find the volume path for the partition 'n' on disk 'disk'.
+//
+// The returned path is in form
+// "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}", not with a DOS drive
+// letter. In practice it is simpler to work this way than try to find out the
+// drive letter.
 func mountWindows(disk string, n int) (string, error) {
 	p := getVolumesForDisk(disk, n)
-	if len(p) != 1 {
-		return "", fmt.Errorf("partition %d not found; found %s", n, p)
+	if len(p) == 0 {
+		return "", fmt.Errorf("partition #%d on disk %s not found", n, disk)
 	}
-	return "", errors.New("Mount() is not implemented on Windows")
+	if len(p) > 1 {
+		return "", fmt.Errorf("found multiple partitions #%d on disk %s: %v", n, disk, p)
+	}
+	return p[0], nil
 }
 
 func umountWindows(disk string) error {
@@ -145,6 +186,9 @@ func umountWindows(disk string) error {
 
 func listSDCardsWindows() []string {
 	var out []string
+	// TODO(maruel): Do it directly instead of shelling out. A dumb loop over
+	// "\\\\.\\physicaldriveN" from 0 to 50 would probably do it and would be
+	// fast enough, at least faster than the current code.
 	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa394132.aspx
 	for _, disk := range wmicList("diskdrive", "get", "medialoaded,mediatype,deviceid") {
 		// Some USB devices report as fixed media, but we do not care since we
@@ -247,6 +291,7 @@ func getVolumesForDisk(disk string, part int) []string {
 	return out
 }
 
+// wmicList returns the parsed output from tool "wmic".
 func wmicList(args ...string) []map[string]string {
 	// TODO(maruel): It'd be nicer to use the Win32 APIs but shelling out will be
 	// good enough for now. Shelling out permits to not have to do COM/WMI,

@@ -346,6 +346,9 @@ func mainImpl() error {
 	if err != nil {
 		return err
 	}
+	if boot == "" {
+		return errors.New("failed to mount /boot")
+	}
 	log.Printf("  /boot mounted as %s\n", boot)
 
 	if err = setupFirstBoot(boot); err != nil {
