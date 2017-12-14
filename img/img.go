@@ -110,6 +110,8 @@ func ListSDCards() []string {
 		return listSDCardsLinux()
 	case "darwin":
 		return listSDCardsOSX()
+	case "windows":
+		return listSDCardsWindows()
 	default:
 		return nil
 	}
@@ -160,6 +162,8 @@ func Flash(imgPath, disk string) error {
 			time.Sleep(time.Second)
 		}
 		return nil
+	case "windows":
+		return flashWindows(imgPath, disk)
 	default:
 		return errors.New("Flash() is not implemented on this OS")
 	}
@@ -214,6 +218,8 @@ func Mount(disk string, n int) (string, error) {
 			return match[1], nil
 		}
 		return "", fmt.Errorf("failed to mount %q: %q", mnt, txt)
+	case "windows":
+		return mountWindows(disk, n)
 	default:
 		return "", errors.New("Mount() is not implemented on this OS")
 	}
@@ -242,6 +248,8 @@ func Umount(disk string) error {
 			}
 		}
 		return nil
+	case "windows":
+		return umountWindows(disk)
 	default:
 		return errors.New("Umount() is not implemented on this OS")
 	}
@@ -329,7 +337,7 @@ func listSDCardsLinux() []string {
 	if err != nil {
 		return nil
 	}
-	out := []string{}
+	var out []string
 	for _, dev := range v.BlockDevices {
 		if dev.RM == "1" && dev.RO == "0" && dev.Type == "disk" {
 			out = append(out, "/dev/"+dev.Name)
