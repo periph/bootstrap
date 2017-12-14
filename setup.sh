@@ -229,13 +229,18 @@ function do_apt {
   echo "- do_apt: Run apt-get update & upgrade and install few apps"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  # Try to work around:
-  #  WARNING: The following packages cannot be authenticated!
-  # TODO(maruel): Likely not needed anymore.
-  run sudo apt-key update
+  # They may fail. For example Raspbian has an apt-get update upon first boot
+  # that may start just before, causing /var/lib/dpkg/lock to be held. This
+  # causes the following command to fails, which then
+  while ! run sudo DEBIAN_FRONTEND=noninteractive apt-get update; do
+    echo "Failed to apt-get update; retrying"
+    sleep 1
+  done
+  while ! run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy upgrade; do
+    echo "Failed to apt-get upgrade; retrying"
+    sleep 1
+  done
 
-  run sudo DEBIAN_FRONTEND=noninteractive apt-get update
-  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy upgrade
   # If you are space constrained, here's the approximative size:
   # git:                 17.7MB
   # ifstat:               3.3MB
@@ -247,8 +252,11 @@ function do_apt {
   # vim:                   28MB (!)
   #
   # curl is missing on odroid.
-  # Optional: ifstat python sysstat
-  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install curl git ssh tmux unattended-upgrades vim
+  # Optional: git ifstat python sysstat
+  while ! run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install curl ssh tmux unattended-upgrades vim; do
+    echo "Failed to apt-get install; retrying"
+    sleep 1
+  done
 }
 
 
@@ -313,6 +321,11 @@ function do_golang_compile {
   # bits userland support.
   # ~/go1.4 is the default GOROOT_BOOTSTRAP value.
 
+  # git is necessary to checkout the source. A tarball could be used but using
+  # git makes it more trivial to upgrade, and git is generally necessary to use
+  # 'go get'.
+  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install git
+
   if [ ! -d ~/golang ]; then
     run git clone https://go.googlesource.com/go ~/golang
     run cd ~/golang
@@ -345,6 +358,9 @@ function do_golang_compile {
 function do_golang {
   echo "- do_golang: Install latest Go toolchain"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  # git is generally necessary to use 'go get'.
+  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install git
 
   local GO_ARCH=$(dpkg --print-architecture)
   if [ "$GO_ARCH" = "armhf" ]; then
