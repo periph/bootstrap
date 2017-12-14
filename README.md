@@ -53,8 +53,6 @@ automatically, you have to specify it with `-sdcard`:
 - Linux: it is in the form of `/dev/sdX` or `/dev/mmcblkN`.
 - OSX: It is in the form of `/dev/diskX`. You can identify the disk of your SD
   card by running: `diskutil list`.  It will look like `/dev/disk2`.
-  - Specify `/dev/rdiskN` (with the **r** for RAW) otherwise it is _much_
-    slower.
 
 
 ### Enabling UART
