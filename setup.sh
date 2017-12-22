@@ -378,18 +378,19 @@ function do_golang {
 
   # Magically figure out latest version for precompiled binaries.
   echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME}"
-  URL=`curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
-  FILENAME=`basename ${URL}`
+  local -r URL=`curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
+  local -r FILENAME=`basename ${URL}`
+
+  # The non-guesswork version:
+  #local -r BASE_URL=https://redirector.gvt1.com/edgedl/go/
+  #local -r GO_VERSION=1.9.2
+  #local -r FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
+  #local -r URL=${BASE_URL}/${FILENAME}
 
   # TODO(maruel): If current == new, skip. This permits running this script
   # nightly.
-  # local CURRENT=$(go version | cut -f 3 -d ' ' | cut -c 3-)
+  # local -r CURRENT=$(go version | grep -oh '[0-9\.]\+')
 
-  # The non-guesswork version:
-  #BASE_URL=https://redirector.gvt1.com/edgedl/go/
-  #GO_VERSION=1.9.2
-  #FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
-  #URL=${BASE_URL}/${FILENAME}
   echo "  Fetching $URL"
   echo "    as $FILENAME"
   run curl -L -o $FILENAME -sS $URL
@@ -830,7 +831,7 @@ EOF
 
   for i in $(grep "^function do_" "$0" | cut -f 2 -d ' '); do
     echo -n "  "
-    LINE=$(bash "$0" --banner-only $i | cut -f 2- -d ':')
+    local LINE=$(bash "$0" --banner-only $i | cut -f 2- -d ':')
     printf "%-21s %s\\n" "$i" "$LINE"
   done
 
