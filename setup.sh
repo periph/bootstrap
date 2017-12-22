@@ -321,10 +321,12 @@ function do_golang_compile {
   # bits userland support.
   # ~/go1.4 is the default GOROOT_BOOTSTRAP value.
 
-  # git is necessary to checkout the source. A tarball could be used but using
-  # git makes it more trivial to upgrade, and git is generally necessary to use
-  # 'go get'.
-  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install git
+  if ! (which git > /dev/null); then
+    # git is necessary to checkout the source. A tarball could be used but using
+    # git makes it more trivial to upgrade, and git is generally necessary to
+    # use 'go get'.
+    run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install git
+  fi
 
   if [ ! -d ~/golang ]; then
     run git clone https://go.googlesource.com/go ~/golang
@@ -359,8 +361,11 @@ function do_golang {
   echo "- do_golang: Install latest Go toolchain"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  # git is generally necessary to use 'go get'.
-  run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install git
+  if ! (which git > /dev/null); then
+    # git is generally necessary to use 'go get'. Some projects use hg instead
+    # but that more rare, so do not install by default.
+    run sudo DEBIAN_FRONTEND=noninteractive apt-get -qy install git
+  fi
 
   local GO_ARCH=$(dpkg --print-architecture)
   if [ "$GO_ARCH" = "armhf" ]; then
@@ -378,8 +383,9 @@ function do_golang {
 
   # Magically figure out latest version for precompiled binaries.
   echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME}"
-  local -r URL=`curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1`
-  local -r FILENAME=`basename ${URL}`
+  local -r URL=$(curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1)
+  local -r FILENAME=$(basename ${URL})
+  local -r NEW_VERSION=$(echo $FILENAME | grep -oP '(?<=go)([0-9\.]+[0-9]+)')
 
   # The non-guesswork version:
   #local -r BASE_URL=https://redirector.gvt1.com/edgedl/go/
@@ -387,9 +393,19 @@ function do_golang {
   #local -r FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
   #local -r URL=${BASE_URL}/${FILENAME}
 
-  # TODO(maruel): If current == new, skip. This permits running this script
-  # nightly.
-  # local -r CURRENT=$(go version | grep -oh '[0-9\.]\+')
+  # If current == new, skip. This permits running this script nightly at minimal
+  # cost.
+  local CURRENT_VERSION=""
+  if (which go > /dev/null); then
+    local CURRENT_VERSION=$(go version | grep -oP '(?<=go)([0-9\.]+[0-9]+)')
+  fi
+  if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+    echo "  Current version is already at $CURRENT_VERSION. Skipping."
+    return 0
+  fi
+  if [ "$CURRENT_VERSION" != "" ]; then
+    echo "  Replacing previous version $CURRENT_VERSION with $NEW_VERSION"
+  fi
 
   echo "  Fetching $URL"
   echo "    as $FILENAME"
