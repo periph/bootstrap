@@ -464,7 +464,7 @@ function do_sendmail {
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   if [ "$DEST_EMAIL" = "" ]; then
-    echo "  Must specify the email address to forward root@localhost to"
+    echo "  Must specify the email address to forward root@localhost to via --email"
     exit 1
   fi
 
@@ -517,6 +517,7 @@ EOF
 EOF
   run sudo systemctl restart postfix
 
+  local -r LOCAL_IP=$(hostname --all-ip-addresses | sort | head -n 1)
   echo "  Sending a test email"
   cat <<EOF | run /usr/sbin/sendmail -t
 FROM: setup.sh
@@ -524,6 +525,9 @@ TO: root@localhost
 Subject: $HOST is configured!
 
 This confirms sendmail works.
+
+IP: $LOCAL_IP
+
 `date`
 EOF
   echo "  Check $DEST_EMAIL for an email from $HOST"

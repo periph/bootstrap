@@ -48,7 +48,8 @@ it is done.
 
 Note that once the device is booted up, the setup takes **several** minutes, the
 hostname will be changed to `raspberrypi-XXXX` (or the relevant board name) and
-the email sent to you might be landing in your spam folder.
+the email sent to you might be landing in your spam folder. The email contains
+the device's IP address on the LAN.
 
 ```
 efe -manufacturer raspberrypi --wifi-ssid <ssid> --wifi-pass <pwd> -email <you@gmail.com>
