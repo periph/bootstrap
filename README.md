@@ -31,16 +31,27 @@ It does so **without** requiring any third party software or requiring any UI
 application. It is completely self-contained.
 
 
-## Example
+## Installation
+
+Prerequisite: you need to have [Go](https://golang.org/dl/) installed on your
+local machine. Then install with:
+
+`go get -u -v periph.io/x/bootstrap/cmd/...`
+
+
+## Usage
 
 This example downloads the [latest Raspbian Stretch Lite image](
 https://www.raspberrypi.org/downloads/raspbian/) and flashes it to an SDCard
 connected to the workstation. It setups the wifi and sends an email to you when
 it is done.
 
+Note that once the device is booted up, the setup takes **several** minutes, the
+hostname will be changed to `raspberrypi-XXXX` (or the relevant board name) and
+the email sent to you might be landing in your spam folder.
+
 ```
-go install periph.io/x/bootstrap/cmd/...
-efe -manufacturer raspberrypi --wifi-ssid <ssid> --wifi-pass <pwd> -email <you@example.com>
+efe -manufacturer raspberrypi --wifi-ssid <ssid> --wifi-pass <pwd> -email <you@gmail.com>
 ```
 
 `efe` takes care of all the steps on the micro computer's initial boot via
@@ -113,7 +124,7 @@ If you already have a running device and want to run the full setup on it, use
 the following. That is generally what you want.
 
 ```
-curl -sSL https://goo.gl/JcTSsH | bash -s -- --wifi-ssid <ssid> --wifi-pass <pwd> --email <you@example.com>
+curl -sSL https://goo.gl/JcTSsH | bash -s -- --wifi-ssid <ssid> --wifi-pass <pwd> --email <you@gmail.com>
 ```
 
 
@@ -175,7 +186,7 @@ email upon [unattended-upgrade](https://wiki.debian.org/UnattendedUpgrades).
 This permits to know when something wrong happens on the worker.
 
 ```
-curl -sSL https://goo.gl/JcTSsH | bash -s -- --email foo@example.com do_sendmail
+curl -sSL https://goo.gl/JcTSsH | bash -s -- --email foo@gmail.com do_sendmail
 ```
 
 
