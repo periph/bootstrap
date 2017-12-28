@@ -63,10 +63,14 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 		// executable is under use, but it is a reasonable fallback.
 		// TODO(maruel): pscp/scp with an alternate name, then plink/ssh in to
 		// rename the files.
-		args = []string{"-C", "-p", "-r", filepath.Join(src, "."), dst}
+		args = []string{"-C", "-p", "-r"}
+		for _, pkg := range pkgs {
+			args = append(args, filepath.Join(src, filepath.Base(pkg)))
+		}
 		if verbose {
 			args = append([]string{"-v"}, args...)
 		}
+		args = append(args, dst)
 	default:
 		return errors.New("please make sure at least one of rsync, scp or pscp is in PATH")
 	}
