@@ -46,39 +46,49 @@ func (i tool) String() string {
 	return toolName[toolIndex[i]:toolIndex[i+1]]
 }
 
-func (t tool) push(verbose bool, src, dst string) error {
+func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) error {
+	dst := fmt.Sprintf("%s:%s", host, rel)
+	var args []string
 	switch t {
 	case rsync:
 		// Push all files via rsync. This is the fastest method.
+		args = []string{"--archive", "--info=progress2", "--compress", src + "/", dst}
 		if verbose {
-			return run("rsync", "--archive", "-v", "--info=progress2", "--compress", src+"/", dst)
+			args = append([]string{"-v"}, args...)
 		}
-		return run("rsync", "--archive", "--info=progress2", "--compress", src+"/", dst)
-	case pscp:
-		// Push all files via pscp, provided by PuTTY.
+	case pscp, scp:
+		// Push all files via pscp/scp, provided by PuTTY/OpenSSH.
 		//
 		// It is slower than rsync and will fail if one of the destination
 		// executable is under use, but it is a reasonable fallback.
-		// TODO(maruel): pscp with an alternate name, then plink in to rename the
-		// files.
+		// TODO(maruel): pscp/scp with an alternate name, then plink/ssh in to
+		// rename the files.
+		args = []string{"-C", "-p", "-r", filepath.Join(src, "."), dst}
 		if verbose {
-			return run("pscp", "-v", "-C", "-p", "-r", src, dst)
+			args = append([]string{"-v"}, args...)
 		}
-		return run("pscp", "-C", "-p", "-r", src, dst)
-	case scp:
-		// Push all files via scp, provided by OpenSSH.
-		//
-		// It is slower than rsync and will fail if one of the destination
-		// executable is under use, but it is a reasonable fallback.
-		// TODO(maruel): scp with an alternate name, then ssh in to rename the
-		// files.
-		if verbose {
-			return run("scp", "-v", "-C", "-p", "-r", src, dst)
-		}
-		return run("scp", "-C", "-p", "-r", src, dst)
 	default:
 		return errors.New("please make sure at least one of rsync, scp or pscp is in PATH")
 	}
+	if err := run(t.String(), args...); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		// On Windows, the +x bit is lost, so we are required to ssh in to change
+		// the file mode.
+		args = []string{host, "chmod", "+x"}
+		for _, pkg := range pkgs {
+			args = append(args, filepath.Join(rel, filepath.Base(pkg)))
+		}
+		switch t {
+		case rsync, scp:
+			return run("ssh", args...)
+		case pscp:
+			return run("plink", args...)
+		}
+	}
+	return nil
+
 }
 
 // detect returns which tool to use.
@@ -100,33 +110,28 @@ func detect() tool {
 
 // toPkg returns one or multiple packages matching the relpath.
 func toPkg(item string) ([]string, error) {
-	out, err := exec.Command("go", "list", item).Output()
+	out, err := exec.Command("go", "list", item).CombinedOutput()
+	s := strings.TrimSpace(string(out))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list %s: %v", item, err)
+		return nil, fmt.Errorf("failed to list package %q: %v\n%s", item, err, s)
 	}
-	return strings.Split(strings.TrimSpace(string(out)), "\n"), nil
+	return strings.Split(s, "\n"), nil
 }
 
 // pushInner does the actual work: build then push.
 func pushInner(verbose bool, t tool, pkgs []string, host, rel, d string) error {
-	exes := make([]string, len(pkgs))
-	for i, pkg := range pkgs {
-		exes[i] = filepath.Join(d, filepath.Base(pkg))
-	}
-
 	// First build everything.
-	for i, pkg := range pkgs {
+	for _, pkg := range pkgs {
 		fmt.Printf("- Building %s\n", pkg)
-		if err := run("go", "build", "-v", "-i", "-o", exes[i], pkg); err != nil {
+		if err := run("go", "build", "-v", "-i", "-o", filepath.Join(d, filepath.Base(pkg)), pkg); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to build %s\n", pkg)
 			return err
 		}
 	}
 
 	// Then push it all as one swoop.
-	dst := fmt.Sprintf("%s:%s", host, rel)
-	fmt.Printf("- Pushing %d executables to %s via %s\n", len(pkgs), dst, t)
-	return t.push(verbose, d, dst)
+	fmt.Printf("- Pushing %d executables to %s in %s via %s\n", len(pkgs), rel, host, t)
+	return t.push(verbose, d, pkgs, host, rel)
 }
 
 // push wraps pushInner with a temporary directory.
@@ -155,7 +160,7 @@ func push(verbose bool, t tool, items []string, host, rel string) error {
 func mainImpl() error {
 	goarch := flag.String("goarch", "arm", "GOARCH value to use")
 	goos := flag.String("goos", "linux", "GOOS value to use")
-	rel := flag.String("rel", "go/bin", "relative directory to push files into")
+	rel := flag.String("rel", ".", "directory on remote host to push files into")
 	host := flag.String("host", os.Getenv("PUSH_HOST"), "host to push to; defaults to content of environment variable PUSH_HOST")
 	verbose := flag.Bool("v", false, "verbose output")
 	flag.Parse()
@@ -179,7 +184,7 @@ func mainImpl() error {
 
 func main() {
 	if err := mainImpl(); err != nil {
-		fmt.Fprintf(os.Stderr, "push: %s.\n\nVisit https://github.com/periph/bootstrap#troubleshooting-push for help.\n", err)
+		fmt.Fprintf(os.Stderr, "push: %s\n\nVisit https://github.com/periph/bootstrap#troubleshooting-push for help.\n", err)
 		os.Exit(1)
 	}
 }
