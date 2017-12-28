@@ -281,13 +281,6 @@ function do_ssh {
   echo "- do_ssh: Enable passwordless ssh"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  # Assumes there is only one account. This is true for most distros. The value
-  # is generally one of: pi, debian, odroid, chip.
-  # TODO(maruel): This is brittle!
-  # TODO(maruel): Inconditionally disable root access.
-  # TODO(maruel): Enable ssh key as argument.
-  USERNAME="$(ls /home)"
-
   if [ "${USER:=root}" != "root" ]; then
     mkdir -p .ssh
     # Do not cp to not copy the file attributes.
@@ -680,6 +673,7 @@ function do_all {
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   detect_board
+  detect_user
 
   # TODO(maruel): Add new commands:
   # - do_5inch
@@ -809,6 +803,14 @@ function detect_board {
 
   # Intentionally use HOST to not clash with bash's HOSTNAME.
   HOST="$BOARD-$SERIAL"
+}
+
+
+function detect_user {
+  # Assumes there is only one account. This is true for most distros. The value
+  # is generally one of: pi, debian, odroid, chip.
+  # TODO(maruel): This is brittle!
+  USERNAME="$(ls /home)"
 }
 
 
@@ -955,6 +957,7 @@ while [ $# -gt 0 ]; do
   # Commands
   do_*)
     detect_board
+    detect_user
     $arg "$@"
     exit 0
     ;;
