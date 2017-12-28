@@ -1,9 +1,8 @@
 # Bootstrap micro computers
 
-Bootstrapping a micro computer can be tedious. This repository contains a pair
-of tools ([efe](#efe) and [setup.sh](#setupsh)) to enable the complete
-automation of the deployment of micr computers, while making them low
-maintenance and as secure as reasonably possible.
+Bootstrapping a micro computer can be tedious. This repository contains a
+toolbox to enable the complete automation of the deployment of micro computers
+while making them low maintenance and as secure as reasonably possible.
 
 There is intentionally no graphical application (GUI) and everything is done at
 the command line (CLI). There are already excellent GUI based flashing tools.
@@ -15,28 +14,45 @@ https://github.com/periph/gohci) workers, so they can be reflashed easily in
 case of tampering. That said, the tools are intentionally generic and reusable.
 
 
-# efe
+# Tools
 
-`efe` is what you run on your workstation to flash one SDCard:
-
-- Fetches the latest OS image for the specified board.
-- Makes a working copy, then modifies the EXT4 root partition to run
-  [setup.sh](#setupsh) upon the first boot.
-- Flashes this modified image to the SDCard.
-- Mounts the SDCard, then modifies the FAT32 boot partition to include
-  `setup.sh` and other data, like `authorized_keys` and settings like the Wifi
-  credentials, country, time zone, etc.
-
-It does so **without** requiring any third party software or requiring any UI
-application. It is completely self-contained.
+- [efe](#efe) flashes a modified Operating System (e.g. linux) on a SDCard that
+  will self-configure upon initial boot.
+- [push](#push) cross-compiles one or multiple Go binaries and transfers them to
+  a remote host, via rsync or scp.
+- [setup.sh](#setupsh) initializes a linux host by installing default tools (Go,
+  git, ssh, vim), optionally enables Wifi (sets country, timezone, wifi ssid and
+  password), locks it down (disables ssh password authentication, enable ssh
+  keys) and makes it self-maintainable (automatic apt upgrade, enables sending
+  emails).
 
 
-## Installation
+# Installation
 
 Prerequisite: you need to have [Go](https://golang.org/dl/) installed on your
 local machine. Then install with:
 
-`go get -u -v periph.io/x/bootstrap/cmd/...`
+```
+go get -u -v periph.io/x/bootstrap/cmd/...
+```
+
+
+# efe
+
+`efe` flashes a modified Operating System (e.g. linux) on a SDCard that will
+self-configure upon initial boot.
+
+- Fetches the latest OS image for the specified board, e.g. Raspbian for
+  Raspberry Pi.
+- Makes a working copy, then modifies the EXT4 root partition to run
+  [setup.sh](#setupsh) upon the first boot.
+- Flashes this modified image to the SDCard.
+- Mounts the SDCard, then modifies the FAT32 boot partition to include
+  `setup.sh` and other data, like `authorized_keys` for passwordless ssh and
+  settings like the Wifi credentials, country, time zone, etc.
+
+It does so **without** requiring any third party software or requiring any UI
+application. It is completely self-contained.
 
 
 ## Usage
@@ -84,23 +100,97 @@ https://www.adafruit.com/product/70)) to connect the serial pins to pins 8 and
 connect (or equivalent on other OSes).
 
 
+# push
+
+`push` cross-compiles one or multiple Go binaries and transfers them to a remote
+host, via rsync or scp.
+
+
+## Usage
+
+Fetches the library [periph.io](https://periph.io), then pushes all its tools to
+an host named `raspberrypi` all at once:
+
+```
+go get -u -v -d periph.io/x/periph
+push -host pi@raspberrypi periph.io/x/periph/cmd/...
+```
+
+Push two specific executables in the subdirectory of the current one:
+
+```
+push -host pi@raspberrypi ./gpio-read ./gpio-write
+```
+
+Use a special GOARCH instead of the default (`arm`), for example when targetting
+a ARM64 host:
+
+```
+push -host user@pine64 -goarch arm64 periph.io/x/periph/cmd/...
+```
+
+
+## Troubleshooting push
+
+`push` depends on being able to ssh to the remote host, in addition to the Go
+toolchain. Try running with `-v`.
+
+Code that requires [cgo](https://blog.golang.org/c-go-cgo) will not easily be
+cross-compilable. Thankfully, [periph.io](https://periph.io) doesn't use cgo.
+
+
+### Push failure
+
+First, make sure that `ssh` is enabled on your remote host. On Raspbian, this
+[requires a specific setup](
+https://www.raspberrypi.org/documentation/remote-access/ssh/).
+
+Second, you'll need to have one of rsync/scp/pscp in your `PATH`. This is the
+case by default on OSX and Ubuntu, but not on Windows.
+
+For Windows, visit [www.chiark.greenend.org.uk/~sgtatham/putty/latest.html](
+https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) and download the
+`MSI` installer, e.g. `putty-64bit-0.70-installer.msi`. Install it. Find `PuTTY`
+in your start menu and start it. Try to [connect to your Raspberry Pi](
+https://www.raspberrypi.org/documentation/remote-access/ssh/windows.md).
+
+
+### Password prompt at every invocation
+
+If the tool prompts for a password at every execution, you'll want to create a
+ssh key with the tool `ssh-keygen`, copy your `id_*.pub` to your remote host as
+`~/.ssh/authorized_keys` and finally make sure you have a `ssh-agent` running on
+your host. You can do `ssh-add` to save the key password in memory.
+
+On Windows, use `PuTTYgen` (instead of `ssh-keygen`) to create the ssh key. Save
+it on your disk (password is recommended but not required) and copy paste the
+string starting with `ssh-rsa ` to your Raspberry Pi into a new file named
+`.ssh/authorized_keys`, you'll need to create the directory `.ssh` first. Start
+`pageant`, right click on the icon in the system tray, and select `Add key`.
+
+
 # setup.sh
+
+`setup.sh` initializes a linux host by installing default tools (Go, git, ssh,
+vim), optionally enables Wifi (set country, timezone, wifi ssid and password),
+locks it down (disables ssh password authentication, enable ssh keys) and makes
+it self-maintainable (automatic apt upgrade, enables sending emails).
+
+It is a modular tool so it is possible to use all the setup steps (the default)
+or execute only one configuration step. It intentionally depends on as little
+tools to be as portable as possible.
 
 `setup.sh` is automatically used by [efe](#efe) to do the on-device
 configuration but it can also be used on a working device, for example on a
 [Beaglebone](https://periph.io/platform/beaglebone/) or a [C.H.I.P.](
 https://periph.io/platform/chip/) which have integrated non-removable flash.
 
-`setup.sh` is a modular tool so it is possible to use all the setup steps (the
-default) or execute only one configuration step. It intentionally depends on as
-little tools to be as portable as possible.
-
 You can use the copy included in the repository, or for your convenience use the
 latest copy at [raw.githubusercontent.com/periph/bootstrap/master/setup.sh](
 https://raw.githubusercontent.com/periph/bootstrap/master/setup.sh) or the short
 URL [https://goo.gl/JcTSsH](https://goo.gl/JcTSsH).
 
-For any non-trivial use it is recommended to make a copy since the tool can be
+For any non-trivial use, it is recommended to make a copy since the tool can be
 changed at any moment and is not yet fully stable. The following examples use
 the short URL but you can replace with your own copy, for example it can be
 served on the LAN via [serve-dir](https://github.com/maruel/serve-dir).
