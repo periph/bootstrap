@@ -19,7 +19,7 @@ case of tampering. That said, the tools are intentionally generic and reusable.
 - [efe](#efe) flashes a modified Operating System (e.g. linux) on a SDCard that
   will self-configure upon initial boot.
 - [push](#push) cross-compiles one or multiple Go binaries and transfers them to
-  a remote host, via rsync or scp.
+  a remote host, via rsync, scp or pscp.
 - [setup.sh](#setupsh) initializes a linux host by installing default tools (Go,
   git, ssh, vim), optionally enables Wifi (sets country, timezone, wifi ssid and
   password), locks it down (disables ssh password authentication, enable ssh
@@ -103,7 +103,8 @@ connect (or equivalent on other OSes).
 # push
 
 `push` cross-compiles one or multiple Go binaries and transfers them to a remote
-host, via rsync or scp.
+host, via [rsync](https://rsync.samba.org/), [scp](https://www.openssh.com/) or
+[pscp](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html).
 
 
 ## Usage
