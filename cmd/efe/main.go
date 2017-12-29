@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/rekby/mbr"
@@ -330,7 +331,9 @@ func mainImpl() error {
 		return err
 	}
 	fmt.Printf("Warning! This will blow up everything in %s\n\n", *sdCard)
-	fmt.Printf("This script has minimal use of 'sudo' for 'dd' to format the SDCard\n\n")
+	if runtime.GOOS != "windows" {
+		fmt.Printf("This script has minimal use of 'sudo' for 'dd' to format the SDCard\n\n")
+	}
 	if err := img.Flash(imgmod, *sdCard); err != nil {
 		return err
 	}
