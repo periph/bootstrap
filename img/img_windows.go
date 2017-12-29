@@ -10,7 +10,17 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 )
+
+// FSCTL_LOCK_VOLUME = CTL_CODE(FILE_DEVICE_FILE_SYSTEM,6,METHOD_BUFFERED,FILE_ANY_ACCESS)
+const fsctlLockVolume = 0x90018
+
+// FSCTL_DISMOUNT_VOLUME = CTL_CODE(FILE_DEVICE_FILE_SYSTEM,8,METHOD_BUFFERED,FILE_ANY_ACCESS)
+const fsctlDismountVolume = 0x90020
+
+// IOCTL_DISK_UPDATE_PROPERTIES = CTL_CODE(IOCTL_DISK_BASE,0x50,METHOD_BUFFERED,FILE_ANY_ACCESS)
+const ioctlDiskUpdateProperties = 0x70140
 
 // flashWindows flashes the content of imgPath to physical disk 'disk'.
 //
@@ -24,13 +34,47 @@ func flashWindows(imgPath, disk string) error {
 		return err
 	}
 	defer fi.Close()
-	fd, err := os.OpenFile(disk, os.O_RDWR, 0)
+
+	var dummy uint32
+	var handles []syscall.Handle
+	for _, v := range getVolumesForDisk(disk) {
+		fd, err := syscall.CreateFile(syscall.StringToUTF16Ptr(v), syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, 0, 0)
+		if err != nil {
+			return fmt.Errorf("failed to open %s: %v", v, err)
+		}
+		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa364575.aspx
+		// "Note that without a successful lock operation, a dismounted volume may
+		// be remounted by any process at any time"
+		err = syscall.DeviceIoControl(fd, fsctlLockVolume, nil, 0, nil, 0, &dummy, nil)
+		if err != nil {
+			syscall.CloseHandle(fd)
+			return fmt.Errorf("failed to lock %s: %v", v, err)
+		}
+		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa364562.aspx
+		//   "It is important to lock the volume first, otherwise unpredictable
+		//   behavior may happen."
+		err = syscall.DeviceIoControl(fd, fsctlDismountVolume, nil, 0, nil, 0, &dummy, nil)
+		if err != nil {
+			syscall.CloseHandle(fd)
+			return fmt.Errorf("failed to unmount %s: %v", v, err)
+		}
+		handles = append(handles, fd)
+	}
+	defer func() {
+		// Closing the handle implicitly removes the lock.
+		for _, h := range handles {
+			syscall.CloseHandle(h)
+		}
+	}()
+
+	fd, err := syscall.Open(disk, os.O_RDWR, 0)
 	if err != nil {
 		return err
 	}
+	closed := false
 	defer func() {
-		if fd != nil {
-			fd.Close()
+		if !closed {
+			syscall.CloseHandle(fd)
 		}
 	}()
 	// Use manual buffer instead of io.Copy() to control buffer size. 1Mb should
@@ -44,7 +88,7 @@ func flashWindows(imgPath, disk string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %v", imgPath, err)
 		}
-		nw, err := fd.Write(b[:n])
+		nw, err := syscall.Write(fd, b[:n])
 		if err != nil {
 			return fmt.Errorf("failed to write %s: %v", disk, err)
 		}
@@ -52,9 +96,14 @@ func flashWindows(imgPath, disk string) error {
 			return errors.New("buffer underflow")
 		}
 	}
-	err = fd.Close()
-	fd = nil
-	return err
+	// Refresh partition table.
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa365192.aspx
+	err = syscall.DeviceIoControl(fd, ioctlDiskUpdateProperties, nil, 0, nil, 0, &dummy, nil)
+	if err != nil {
+		return fmt.Errorf("failed to refresh partition table on %s: %v", disk, err)
+	}
+	closed = true
+	return syscall.CloseHandle(fd)
 }
 
 func mountWindows(disk string, n int) (string, error) {
@@ -77,6 +126,10 @@ func listSDCardsWindows() []string {
 		}
 	}
 	return out
+}
+
+func getVolumesForDisk(disk string) []string {
+	return nil
 }
 
 func wmicList(args ...string) []map[string]string {
