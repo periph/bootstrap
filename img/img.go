@@ -32,6 +32,9 @@ import (
 )
 
 // GetTimeLocation returns the time location, e.g. America/Toronto.
+//
+// This is then used by Debian to figure out the right timezone (e.g. EST/EDT)
+// based on the location via tables.
 func GetTimeLocation() string {
 	// OSX and Ubuntu
 	if d, _ := os.Readlink("/etc/localtime"); len(d) != 0 {
@@ -47,7 +50,8 @@ func GetTimeLocation() string {
 			return string(match[1])
 		}
 	}
-	// TODO(maruel): Windows.
+	// We didn't find a way on Windows to retrieve the locatime time zone
+	// location in expected format.
 	return "Etc/UTC"
 }
 
