@@ -1,18 +1,25 @@
 # Summary
 
-- a tool to flash an SDCard that will automatically set itself up
+`bootstrap` contains:
+
+- a tool to flash an OS to a SDCard, an OS that will automatically set itself up
+  upon first boot
 - a tool to cross compile and push Go executables seamlessly to a Raspberry Pi
   or any other host accessible via ssh.
 
-`bootstrap` works on **Windows**, **OSX** and Ubuntu.
+`bootstrap` has the following properties:
 
-`bootstrap` supports: Raspberry Pi running Raspbian Lite, ODROID-C1
-running Ubuntu headless, C.H.I.P. running Debian, BeagleBone running Debian.
+- works on **Windows**, **OSX** and Ubuntu.
+- supports: Raspberry Pi running Raspbian Lite, ODROID-C1
+  running Ubuntu headless, C.H.I.P. running Debian, BeagleBone running Debian.
+- exposes its flashing functionality as a Go library:
+  [![GoDoc](https://godoc.org/periph.io/x/bootstrap/img?status.svg)](https://periph.io/x/bootstrap/img)
 
-`bootstrap` exposes its flashing functionality as a Go library:
-[![GoDoc](https://godoc.org/periph.io/x/bootstrap/img?status.svg)](https://periph.io/x/bootstrap/img)
+Join us for a chat on
+[gophers.slack.com/messages/periph](https://gophers.slack.com/messages/periph),
+get an [invite here](https://invite.slack.golangbridge.org/).
 
-**Yes**, you can now flash an SDCard at the command line from Windows.
+**Yes**, you can now flash an SDCard at the command line from Windows. 🎉
 
 ![Screenshot](https://raw.githubusercontent.com/wiki/periph/bootstrap/screenshot_windows.png)
 
