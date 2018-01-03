@@ -9,7 +9,6 @@
 // It includes gathering environmental information, like the current country
 // and location on the host to enable configuring the board with the same
 // settings.
-//
 package img // import "periph.io/x/bootstrap/img"
 
 import (
@@ -35,6 +34,9 @@ import (
 //
 // This is then used by Debian to figure out the right timezone (e.g. EST/EDT)
 // based on the location via tables.
+//
+// We didn't find a way on Windows to retrieve the local "time zone location"
+// in expected format. In the meantime, "Etc/UTC" is returned on Windows.
 func GetTimeLocation() string {
 	// OSX and Ubuntu
 	if d, _ := os.Readlink("/etc/localtime"); len(d) != 0 {
@@ -50,8 +52,6 @@ func GetTimeLocation() string {
 			return string(match[1])
 		}
 	}
-	// We didn't find a way on Windows to retrieve the locatime time zone
-	// location in expected format.
 	return "Etc/UTC"
 }
 
