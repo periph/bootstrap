@@ -1,4 +1,23 @@
-# Bootstrap micro computers
+# Summary
+
+- a tool to flash an SDCard that will automatically set itself up
+- a tool to cross compile and push Go executables seamlessly to a Raspberry Pi
+  or any other host accessible via ssh.
+
+`bootstrap` works on **Windows**, **OSX** and Ubuntu.
+
+`bootstrap` supports: Raspberry Pi running Raspbian Lite, ODROID-C1
+running Ubuntu headless, C.H.I.P. running Debian, BeagleBone running Debian.
+
+`bootstrap` exposes its flashing functionality as a Go library:
+[![GoDoc](https://godoc.org/periph.io/x/bootstrap/img?status.svg)](https://periph.io/x/bootstrap/img)
+
+**Yes**, you can now flash an SDCard at the command line from Windows.
+
+![Screenshot](https://raw.githubusercontent.com/wiki/periph/bootstrap/screenshot_windows.png)
+
+
+## Background
 
 Bootstrapping a micro computer can be tedious. This repository contains a
 toolbox to enable the complete automation of the deployment of micro computers
@@ -17,7 +36,7 @@ case of tampering. That said, the tools are intentionally generic and reusable.
 # Tools
 
 - [efe](#efe) flashes a modified Operating System (e.g. linux) on a SDCard that
-  will self-configure upon initial boot.
+  will self-configure upon initial boot by running [setup.sh](#setupsh).
 - [push](#push) cross-compiles one or multiple Go binaries and transfers them to
   a remote host, via rsync, scp or pscp.
 - [setup.sh](#setupsh) initializes a linux host by installing default tools (Go,
@@ -36,13 +55,15 @@ local machine. Then install with:
 go get -u -v periph.io/x/bootstrap/cmd/...
 ```
 
+`bootstrap` doesn't use `cgo`.
+
 
 # efe
 
 `efe` flashes a modified Operating System (e.g. linux) on a SDCard that will
 self-configure upon initial boot.
 
-- Fetches the latest OS image for the specified board, e.g. Raspbian for
+- Fetches the latest OS image for the specified board, e.g. Raspbian Lite for
   Raspberry Pi.
 - Makes a working copy, then modifies the EXT4 root partition to run
   [setup.sh](#setupsh) upon the first boot.
