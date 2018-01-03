@@ -134,6 +134,8 @@ connect (or equivalent on other OSes).
 host, via [rsync](https://rsync.samba.org/), [scp](https://www.openssh.com/) or
 [pscp](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html).
 
+![Screenshot](https://raw.githubusercontent.com/wiki/periph/bootstrap/push_screenshot_windows.png)
+
 
 ## Usage
 
