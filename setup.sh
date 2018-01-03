@@ -510,7 +510,10 @@ EOF
 EOF
   run sudo systemctl restart postfix
 
-  local -r LOCAL_IP=$(hostname --all-ip-addresses | sort | head -n 1)
+  # In the case of both USB network + wifi connectivity, which is possible on
+  # RPi Zero and C.H.I.P., the two IP addresses will be listed on one line
+  # separated with one space.
+  local -r LOCAL_IP=$(hostname --all-ip-addresses)
   echo "  Sending a test email"
   cat <<EOF | run /usr/sbin/sendmail -t
 FROM: setup.sh
