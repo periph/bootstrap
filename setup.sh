@@ -632,7 +632,7 @@ EOF
       [Service]
       Type=oneshot
       Restart=no
-      ExecStart=iw wlan0 set power_save off
+      ExecStart=/sbin/iw wlan0 set power_save off
       [Install]
       WantedBy=default.target
 EOF
