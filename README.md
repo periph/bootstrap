@@ -186,6 +186,24 @@ in your start menu and start it. Try to [connect to your Raspberry Pi](
 https://www.raspberrypi.org/documentation/remote-access/ssh/windows.md).
 
 
+### Pre-building
+
+`push` tries to use `go build -i`, which will prebuild static libraries,
+including the standard library. This requires `${GOROOT}/pkg/${GOOS}_${GOARCH}`
+to be writeable. If it is not, `push` will print a warning but will continue,
+albeit rebuilding from scratch every time.  Making it writeable will speed up
+the build significantly:
+
+```
+export GOROOT=$(go env GOROOT)
+sudo mkdir -p $GOROOT/pkg/linux_arm
+sudo chown -R $USER $GOROOT/pkg/linux_arm
+```
+
+Since executables in this directory are not runnable on your system, the
+security implications are quasi-nil.
+
+
 ### Password prompt at every invocation
 
 If the tool prompts for a password at every execution, you'll want to create a
