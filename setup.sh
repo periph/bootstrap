@@ -283,15 +283,20 @@ function do_ssh {
 
   if [ "${USER:=root}" != "root" ]; then
     mkdir -p .ssh
-    # Do not cp to not copy the file attributes.
-    cat $SSH_KEY >>.ssh/authorized_keys
+    if [ -f "$SSH_KEY" ]; then
+      # Do not cp to not copy the file attributes.
+      cat "$SSH_KEY" >>.ssh/authorized_keys
+    fi
   else
     mkdir -p /home/$USERNAME/.ssh
-    cat $SSH_KEY >>/home/$USERNAME/.ssh/authorized_keys
+    if [ -f "$SSH_KEY" ]; then
+      cat "$SSH_KEY" >>/home/$USERNAME/.ssh/authorized_keys
+    fi
     chown -R $USERNAME:$USERNAME /home/$USERNAME/.ssh
   fi
 
   if [ -f /home/$USERNAME/.ssh/authorized_keys ]; then
+    # Only do if there's an authorized key!
     echo "  Disabling ssh password authentication support"
     run sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
   fi
