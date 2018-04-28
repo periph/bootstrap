@@ -25,41 +25,49 @@ function do_beaglebone {
 
   # - User/pwd: debian/temppwd
 
+  # Not sure if it should always be done by default.
+  #echo "  Enabling SPI0"
+  #run config-pin p9.17 spi_cs
+  #run config-pin p9.21 spi_
+  #run config-pin p9.18 spi_
+  #run config-pin p9.22 spi_sclk
+
+  # This is a bit aggressive but this frees up a lot of GPIOs.
+# echo "  Disabling HDMI and audio"
+#  sudo_append_file /boot/uEnv.txt <<EOF
+#    # Change made by https://github.com/periph/bootstrap
+#    disable_uboot_overlay_video=1
+#    disable_uboot_overlay_audio=1
+#EOF
+}
+
+function do_beaglebone_trim {
+  echo "- do_beaglebone_trim: Aggressively trim Beaglebone specific packages"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
   # The Beaglebone comes with a lot of packages preinstalled, which fills up the
   # small 4Gb eMMC quickly. Make some space as we won't be using these.
   #
+  # This is not done by default because this is quite aggressive. Run manually
+  # with:
+  #   bash setup.sh do_beaglebone_trim
+  #
   # Use the following to hunt and kill:
   #   dpkg --get-selections | less
-  run sudo apt-get remove -y \
-    'ruby*' \
-    apache2 \
-    apache2-bin \
-    apache2-data \
-    apache2-utils \
-    bb-bonescript-installer-beta \
-    bb-cape-overlays \
-    bb-customizations \
-    bb-doc-bone101-jekyll \
-    bb-node-red-installer \
+  #
+  # Even with this, there won't be that much space left.
+  run sudo apt remove -y --purge \
+    apache2 apache2-bin apache2-data apache2-utils \
+    ardupilot-copter-bbbmini ardupilot-copter-blue ardupilot-plane-bbbmini \
+    ardupilot-plane-blue ardupilot-rover-bbbmini ardupilot-rover-blue \
+    bone101 \
     c9-core-installer \
-    jekyll \
+    doc-beaglebone-getting-started doc-beaglebonegreen-getting-started \
+    doc-seeed-bbgw-getting-started
+    gpiod \
     nodejs \
-    x11-common
-    # Removing one these causes the ethernet over USB to fail:
-    #rcn-ee-archive-keyring \
-    #rcnee-access-point \
-    #seeed-wificonfig-installer \
-  run sudo apt-get purge -y apache2 mysql-common x11-common
-
-  echo "  Enabling SPI"
-  #git clone https://github.com/beagleboard/bb.org-overlays
-  run cd /opt/source/bb.org-overlays
-  run ./dtc-overlay.sh
-  run ./install.sh
-  sudo_append_file /boot/uEnv.txt <<EOF
-    # Change made by https://github.com/periph/bootstrap
-    cape_enable=bone_capemgr.enable_partno=BB-SPIDEV0
-EOF
+    roboticscape
+  run sudo apt autoremove
 }
 
 
