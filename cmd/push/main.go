@@ -123,13 +123,13 @@ func toPkg(item string) ([]string, error) {
 }
 
 // pushInner does the actual work: build then push.
-func pushInner(verbose, prebuild bool, t tool, pkgs []string, host, rel, d string) error {
+func pushInner(verbose bool, t tool, pkgs []string, tags string, host, rel, d string) error {
 	// First build everything.
 	for _, pkg := range pkgs {
 		fmt.Printf("- Building %s\n", pkg)
 		args := []string{"build", "-v", "-o", filepath.Join(d, filepath.Base(pkg))}
-		if prebuild {
-			args = append(args, "-i")
+		if tags != "" {
+			args = append(args, "-tags", tags)
 		}
 		args = append(args, pkg)
 		if err := run("go", args...); err != nil {
@@ -144,7 +144,7 @@ func pushInner(verbose, prebuild bool, t tool, pkgs []string, host, rel, d strin
 }
 
 // push wraps pushInner with a temporary directory.
-func push(verbose, prebuild bool, t tool, items []string, host, rel string) error {
+func push(verbose bool, t tool, items []string, tags string, host, rel string) error {
 	// First convert the passed strings into real package names.
 	var pkgs []string
 	for _, item := range items {
@@ -159,55 +159,18 @@ func push(verbose, prebuild bool, t tool, items []string, host, rel string) erro
 	if err != nil {
 		return err
 	}
-	err = pushInner(verbose, prebuild, t, pkgs, host, rel, d)
+	err = pushInner(verbose, t, pkgs, tags, host, rel, d)
 	if err1 := os.RemoveAll(d); err == nil {
 		err = err1
 	}
 	return err
 }
 
-// canPrebuild returns if the "-i" flag can be used when running "go build".
-//
-// p must be "${GOROOT}/pkg/${GOOS}_${GOARCH}"
-func canPrebuild(p string) bool {
-	i, err := os.Stat(p)
-	if os.IsNotExist(err) {
-		// Try the upper directory.
-		p = filepath.Dir(p)
-		i, err = os.Stat(p)
-		if err != nil {
-			log.Printf("os.Stat(%q): %v", p, err)
-			return false
-		}
-	} else if err != nil {
-		// "${GOROOT}/pkg" doesn't exist.
-		log.Printf("os.Stat(%q): %v", p, err)
-		return false
-	}
-	if !i.IsDir() {
-		log.Printf("%q is not a directory!", p)
-		return false
-	}
-	// os.OpenFile(p, os.O_RDWR, 0777) doesn't work. unix.Access() is well, only
-	// on Unix. For now use a sure way to figure it out.
-	f, err := ioutil.TempFile(p, "push")
-	if err != nil {
-		return false
-	}
-	name := f.Name()
-	if err = f.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: Failed to close: %s: %v\n", name, err)
-	}
-	if err = os.Remove(name); err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: Failed to remove: %s: %v\n", name, err)
-	}
-	return true
-}
-
 func mainImpl() error {
 	goarch := flag.String("goarch", "arm", "GOARCH value to use")
 	goarm := flag.String("goarm", "6", "GOARM value to use")
 	goos := flag.String("goos", "linux", "GOOS value to use")
+	tags := flag.String("tags", "", "build tags to pass")
 	rel := flag.String("rel", ".", "directory on remote host to push files into")
 	host := flag.String("host", os.Getenv("PUSH_HOST"), "host to push to; defaults to content of environment variable PUSH_HOST")
 	verbose := flag.Bool("v", false, "verbose output")
@@ -226,17 +189,11 @@ func mainImpl() error {
 		return errors.New("Please make sure at least one of rsync, scp or pscp is in PATH")
 	}
 
-	p := filepath.Join(runtime.GOROOT(), "pkg", *goos+"_"+*goarch)
-	prebuild := canPrebuild(p)
-	if !prebuild {
-		fmt.Printf("Note: %s is read-only, see https://github.com/periph/bootstrap#pre-building\n", p)
-	}
-
 	// Simplify our life and just set it process wide.
 	os.Setenv("GOARCH", *goarch)
 	os.Setenv("GOARM", *goarm)
 	os.Setenv("GOOS", *goos)
-	return push(*verbose, prebuild, t, pkgs, *host, *rel)
+	return push(*verbose, t, pkgs, *tags, *host, *rel)
 }
 
 func main() {
