@@ -123,20 +123,22 @@ function do_odroid {
   #
   # By default there is not user account. Create one. The main problem is that
   # it means that it is impossible to ssh in until the account is created.
-  run sudo useradd odroid --password odroid -M --shell /bin/bash \
-    -G adm,cdrom,dialout,dip,fax,floppy,plugdev,sudo,tape,video
-  if [ $DRY_RUN -eq 0 ]; then
-    echo odroid:odroid | sudo chpasswd
-  else
-    echo "Dry run: echo odroid:odroid | sudo chpasswd"
-  fi
+  if [ ! -d /home/odroid ]; then
+    run sudo useradd odroid --password odroid -M --shell /bin/bash \
+      -G adm,cdrom,dialout,dip,fax,floppy,plugdev,sudo,tape,video
+    if [ $DRY_RUN -eq 0 ]; then
+      echo odroid:odroid | sudo chpasswd
+    else
+      echo "Dry run: echo odroid:odroid | sudo chpasswd"
+    fi
 
-  # /etc/skel won't be copied automatically when the directory already existed,
-  # so forcibly do it now.
-  run sudo cp /etc/skel/.[!.]* /home/odroid
-  run sudo chown odroid:odroid /home/odroid/.[!.]*
-  # This file is created automatically and owned by root.
-  run rm -rf /home/odroid/resize.log
+    # /etc/skel won't be copied automatically when the directory already
+    # existed, so forcibly do it now.
+    run sudo cp /etc/skel/.[!.]* /home/odroid
+    run sudo chown odroid:odroid /home/odroid/.[!.]*
+    # This file is created automatically and owned by root.
+    run rm -rf /home/odroid/resize.log
+  fi
 }
 
 
