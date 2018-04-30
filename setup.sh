@@ -829,18 +829,20 @@ function detect_board {
   # Get the CPU serial number, otherwise the systemd machine ID.
   SERIAL="$(cat /proc/cpuinfo | grep Serial | cut -d ':' -f 2 | sed 's/^[ 0]\+//')"
   if [ "$SERIAL" = "" ]; then
-    SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
+    # Many ARM CPUs do not have a serial number. In this case, use the eMMC CID
+    # register if available.
+    # https://forum.odroid.com/viewtopic.php?f=80&t=3064
+    export SERIAL="$(cat /sys/block/mmcblk?/device/cid 2>/dev/null | cut -c 25-)"
   fi
-  # On ODROID-C1, Serial is 1b00000000000000 and /etc/machine-id is static. Use
-  # the eMMC CID register. https://forum.odroid.com/viewtopic.php?f=80&t=3064
-  if [ "$SERIAL" = "1b00000000000000" ]; then
-    export SERIAL="$(cat /sys/block/mmcblk0/device/cid | cut -c 25- | cut -c -4)"
+  if [ "$SERIAL" = "" ]; then
+    # Fallback on systemd ID. It's not a good source in practice.
+    SERIAL="$(hostnamectl status | grep 'Machine ID' | cut -d ':' -f 2 | cut -c 2-)"
   fi
 
   # Cut to keep the last 4 characters. Otherwise this quickly becomes unwieldy.
   # The first characters cannot be used because they matches when buying
   # multiple devices at once. 4 characters of hex encoded digits gives 65535
-  # combinations.  Taking in account there will be at most 255 devices on the
+  # combinations. Taking in account there will be at most 255 devices on the
   # network subnet, it should be "good enough". Increase to 5 if needed.
   SERIAL="$(echo $SERIAL | sed 's/.*\(....\)/\1/')"
 
