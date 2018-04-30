@@ -41,6 +41,7 @@ function do_beaglebone {
 #EOF
 }
 
+
 function do_beaglebone_trim {
   echo "- do_beaglebone_trim: Aggressively trim Beaglebone specific packages"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
@@ -68,6 +69,16 @@ function do_beaglebone_trim {
     nodejs \
     roboticscape
   run sudo apt autoremove
+
+  # See https://periph.io/platform/beaglebone/ for more information.
+  # Disable SoftAp0.
+  run sudo systemctl stop bb-wl18xx-wlan0
+  run sudo systemctl disable bb-wl18xx-wlan0
+  # Disable bluetooth.
+  run sudo systemctl stop bb-wl18xx-bluetooth
+  run sudo systemctl disable bb-wl18xx-bluetooth
+  run sudo systemctl stop bluetooth
+  run sudo systemctl disable bluetooth
 }
 
 
