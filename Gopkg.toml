@@ -27,10 +27,6 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/maruel/go-fs"
-
-[[constraint]]
-  branch = "master"
   name = "github.com/rekby/mbr"
 
 [[constraint]]

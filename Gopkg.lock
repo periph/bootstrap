@@ -5,7 +5,7 @@
   branch = "master"
   name = "github.com/DHowett/go-plist"
   packages = ["."]
-  revision = "233df3c4f07b0c562da0e8a6fb850681ac49bb90"
+  revision = "500bd5b9081b5957ac10389f86e069869f00c348"
 
 [[projects]]
   branch = "master"
@@ -15,13 +15,30 @@
 
 [[projects]]
   name = "github.com/ulikunitz/xz"
-  packages = [".","internal/hash","internal/xlog","lzma"]
+  packages = [
+    ".",
+    "internal/hash",
+    "internal/xlog",
+    "lzma"
+  ]
   revision = "0c6b41e72360850ca4f98dc341fd999726ea007f"
   version = "v0.5.4"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/crypto"
+  packages = ["pbkdf2"]
+  revision = "a49355c7e3f8fe157a85be2f77e6e269a0f89602"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sys"
+  packages = ["windows"]
+  revision = "7138fd3d9dc8335c567ca206f4333fb75eb05d56"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "5dd929ed6fbeff7c5d1fc4cb20512bcb5fb095a4b0b812d3f41f848ed5aff403"
+  inputs-digest = "48b9838d2a139092238bc70643ace5af337d641d915c0a312469372a1c5eb10d"
   solver-name = "gps-cdcl"
   solver-version = 1
