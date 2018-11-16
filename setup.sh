@@ -663,7 +663,7 @@ function do_wifi_power {
     # For the BeagleBone, it's not too bad if SoftAp0 is kept on, as this forces
     # the wifi to continuously be awake. But once SoftAp0 is turned off, the
     # device is mostly unreachable.
-    sudo write_file /etc/udev/rules.d/70-disable-wifi-power-saving.rules <<EOF
+    sudo_write_file /etc/udev/rules.d/70-disable-wifi-power-saving.rules <<EOF
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/sbin/iw dev %k set power_save off"
 EOF
     run sudo udevadm control --reload-rules
