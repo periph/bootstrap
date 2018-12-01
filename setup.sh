@@ -720,6 +720,27 @@ EOF
 }
 
 
+function do_self_update {
+  echo "Replace the script with the latest version"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  if [ "$0" = bash ]; then
+    echo ""
+    echo "self_update is unsupported when curl'ed."
+    exit 1
+  fi
+
+  if (which curl > /dev/null); then
+    curl -sSL https://raw.githubusercontent.com/periph/bootstrap/master/setup.sh > $0
+    chmod +x $0
+    echo "Done!"
+  else
+    echo "Failed to find curl"
+    exit 1
+  fi
+}
+
+
 function do_all {
   echo "- do_all: Runs all default installation steps"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
