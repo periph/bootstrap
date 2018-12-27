@@ -138,6 +138,10 @@ func pushInner(verbose bool, t tool, pkgs []string, tags string, host, rel, d st
 		}
 	}
 
+	if host == "" {
+		fmt.Printf("Note: -host not provided, not pushing.\n")
+		return nil
+	}
 	// Then push it all as one swoop.
 	fmt.Printf("- Pushing %d executables to %s in %s via %s\n", len(pkgs), rel, host, t)
 	return t.push(verbose, d, pkgs, host, rel)
