@@ -434,7 +434,9 @@ function do_golang {
     run sudo rm -rf /usr/local/go
   fi
   echo "  Extracting to /usr/local/go"
-  run sudo tar -C /usr/local -xzf $FILENAME
+  # Filter to only extract 'go' from the tarball.
+  # https://github.com/golang/go/issues/29906
+  run sudo tar -C /usr/local -xzf $FILENAME go
   run rm $FILENAME
   echo "  Setting /etc/profile.d/golang.sh for GOPATH and PATH"
   sudo_write_file /etc/profile.d/golang.sh << 'EOF'
