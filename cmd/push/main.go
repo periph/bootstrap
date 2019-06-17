@@ -177,6 +177,7 @@ func mainImpl() error {
 	tags := flag.String("tags", "", "build tags to pass")
 	rel := flag.String("rel", ".", "directory on remote host to push files into")
 	host := flag.String("host", os.Getenv("PUSH_HOST"), "host to push to; defaults to content of environment variable PUSH_HOST")
+	preferredTool := flag.String("tool", "", "tool to push with: either rsync, pscp or scp; autodetects by default")
 	verbose := flag.Bool("v", false, "verbose output")
 	flag.Parse()
 	pkgs := flag.Args()
@@ -188,9 +189,20 @@ func mainImpl() error {
 		log.SetOutput(ioutil.Discard)
 	}
 
-	t := detect()
-	if t == none {
-		return errors.New("Please make sure at least one of rsync, scp or pscp is in PATH")
+	var t tool
+	switch *preferredTool {
+	case "rsync":
+		t = rsync
+	case "pscp":
+		t = pscp
+	case "scp":
+		t = scp
+	case "":
+		if t = detect(); t == none {
+			return errors.New("Please make sure at least one of rsync, scp or pscp is in PATH")
+		}
+	default:
+		return fmt.Errorf("Unrecognized tool %q", *preferredTool)
 	}
 
 	// Simplify our life and just set it process wide.
