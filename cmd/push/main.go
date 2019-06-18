@@ -15,7 +15,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -31,31 +33,55 @@ type tool int
 
 const (
 	none tool = iota
-	rsync
+	rsyncOld
+	rsyncRecent
 	pscp
 	scp
 )
-const toolName = "nonersyncpscpscp"
 
-var toolIndex = [...]uint8{0, 4, 9, 13, 16}
+var toolName map[tool]string = map[tool]string{
+	none:        "none",
+	rsyncOld:    "rsync",
+	rsyncRecent: "rsync",
+	pscp:        "pscp",
+	scp:         "scp",
+}
 
 func (i tool) String() string {
-	if i < 0 || i >= tool(len(toolIndex)-1) {
-		return fmt.Sprintf("tool(%d)", i)
+	return toolName[i]
+}
+
+func rsyncPushArgs(src, dst string, verbose bool) []string {
+	args := []string{"--archive", "--compress", src + "/", dst}
+	if verbose {
+		args = append([]string{"-v"}, args...)
 	}
-	return toolName[toolIndex[i]:toolIndex[i+1]]
+	return args
+}
+
+func scpPushArgs(src, dst string, pkgs []string, verbose bool) []string {
+	args := []string{"-C", "-p", "-r"}
+	for _, pkg := range pkgs {
+		args = append(args, filepath.Join(src, filepath.Base(pkg)))
+	}
+	if verbose {
+		args = append([]string{"-v"}, args...)
+	}
+	return append(args, dst)
 }
 
 func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) error {
 	dst := fmt.Sprintf("%s:%s", host, rel)
 	var args []string
 	switch t {
-	case rsync:
+	case rsyncOld:
 		// Push all files via rsync. This is the fastest method.
-		args = []string{"--archive", "--info=progress2", "--compress", src + "/", dst}
-		if verbose {
-			args = append([]string{"-v"}, args...)
-		}
+		args = rsyncPushArgs(src, dst, verbose)
+		args = append([]string{"--progress"}, args...)
+	case rsyncRecent:
+		// Push all files via rsync. This is the fastest method.
+		args = rsyncPushArgs(src, dst, verbose)
+		args = append([]string{"--info=progress2"}, args...)
 	case pscp, scp:
 		// Push all files via pscp/scp, provided by PuTTY/OpenSSH.
 		//
@@ -63,14 +89,7 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 		// executable is under use, but it is a reasonable fallback.
 		// TODO(maruel): pscp/scp with an alternate name, then plink/ssh in to
 		// rename the files.
-		args = []string{"-C", "-p", "-r"}
-		for _, pkg := range pkgs {
-			args = append(args, filepath.Join(src, filepath.Base(pkg)))
-		}
-		if verbose {
-			args = append([]string{"-v"}, args...)
-		}
-		args = append(args, dst)
+		args = scpPushArgs(src, dst, pkgs, verbose)
 	default:
 		return errors.New("please make sure at least one of rsync, scp or pscp is in PATH")
 	}
@@ -85,7 +104,7 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 			args = append(args, filepath.Join(rel, filepath.Base(pkg)))
 		}
 		switch t {
-		case rsync, scp:
+		case rsyncOld, rsyncRecent, scp:
 			return run("ssh", args...)
 		case pscp:
 			return run("plink", args...)
@@ -95,9 +114,39 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 
 }
 
+// See print_rsync_version https://git.samba.org/?p=rsync.git;a=blob;f=options.c
+var rsyncVersionRegexp = regexp.MustCompile(`^rsync\s+version\s+(\d+)\.(\d+)`)
+
+// rsyncVersion reports the installed rsync variant.
+func rsyncVersion() tool {
+	version, err := exec.Command("rsync", "--version").CombinedOutput()
+	if err != nil {
+		return none
+	}
+	matches := rsyncVersionRegexp.FindSubmatch(version)
+	if matches == nil {
+		return none
+	}
+	major, err := strconv.Atoi(string(matches[1]))
+	if err != nil {
+		return none
+	}
+	minor, err := strconv.Atoi(string(matches[2]))
+	if err != nil {
+		return none
+	}
+	// --info=progress2 has been introduced in 3.1.0
+	// https://download.samba.org/pub/rsync/src/rsync-3.1.0-NEWS
+	if (major > 3) || (major == 3 && minor >= 1) {
+		return rsyncRecent
+	} else {
+		return rsyncOld
+	}
+}
+
 // detect returns which tool to use.
 func detect() tool {
-	if _, err := exec.Command("rsync", "--version").CombinedOutput(); err == nil {
+	if rsync := rsyncVersion(); rsync != none {
 		return rsync
 	}
 	if runtime.GOOS == "windows" {
@@ -192,7 +241,9 @@ func mainImpl() error {
 	var t tool
 	switch *preferredTool {
 	case "rsync":
-		t = rsync
+		if t = rsyncVersion(); t == none {
+			return fmt.Errorf("Could not find rsync in PATH")
+		}
 	case "pscp":
 		t = pscp
 	case "scp":
