@@ -15,7 +15,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -31,13 +33,14 @@ type tool int
 
 const (
 	none tool = iota
-	rsync
+	rsyncProgress
+	rsyncOld
 	pscp
 	scp
 )
-const toolName = "nonersyncpscpscp"
+const toolName = "nonersyncrsyncpscpscp"
 
-var toolIndex = [...]uint8{0, 4, 9, 13, 16}
+var toolIndex = [...]uint8{0, 4, 9, 14, 18, 21}
 
 func (i tool) String() string {
 	if i < 0 || i >= tool(len(toolIndex)-1) {
@@ -50,9 +53,15 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 	dst := fmt.Sprintf("%s:%s", host, rel)
 	var args []string
 	switch t {
-	case rsync:
+	case rsyncProgress:
 		// Push all files via rsync. This is the fastest method.
 		args = []string{"--archive", "--info=progress2", "--compress", src + "/", dst}
+		if verbose {
+			args = append([]string{"-v"}, args...)
+		}
+	case rsyncOld:
+		// Push all files via rsync. This is the fastest method.
+		args = []string{"--archive", "--progress", "--compress", src + "/", dst}
 		if verbose {
 			args = append([]string{"-v"}, args...)
 		}
@@ -85,7 +94,7 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 			args = append(args, filepath.Join(rel, filepath.Base(pkg)))
 		}
 		switch t {
-		case rsync, scp:
+		case rsyncProgress, rsyncOld, scp:
 			return run("ssh", args...)
 		case pscp:
 			return run("plink", args...)
@@ -95,21 +104,67 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 
 }
 
-// detect returns which tool to use.
-func detect() tool {
-	if _, err := exec.Command("rsync", "--version").CombinedOutput(); err == nil {
-		return rsync
+// As printed by print_rsync_version() in
+// https://git.samba.org/?p=rsync.git;a=blob;f=options.c
+// Ignore the patch version and protocol version.
+var reRsyncVersion = regexp.MustCompile(`^rsync\s+version\s+(\d+)\.(\d+)`)
+
+func getRsyncVersion(v []byte) (int, int) {
+	m := reRsyncVersion.FindSubmatch(v)
+	if m == nil {
+		return 0, 0
 	}
+	major, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		return 0, 0
+	}
+	minor, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		return 0, 0
+	}
+	return major, minor
+}
+
+func detectRsync() tool {
+	if v, err := exec.Command("rsync", "--version").CombinedOutput(); err == nil {
+		if major, minor := getRsyncVersion(v); major != 0 {
+			// --info=progress2 has been introduced in 3.1.0 as noted at
+			// https://download.samba.org/pub/rsync/src/rsync-3.1.0-NEWS
+			if major > 3 || (major == 3 && minor <= 1) {
+				return rsyncProgress
+			}
+			return rsyncOld
+		}
+	}
+	return none
+}
+
+func detectPscp() tool {
 	if runtime.GOOS == "windows" {
 		if _, err := exec.Command("pscp", "-V").CombinedOutput(); err == nil {
 			return pscp
 		}
 	}
+	return none
+}
+
+func detectScp() tool {
 	_, err := exec.Command("scp", "-V").CombinedOutput()
 	if err2, ok := err.(*exec.Error); ok && err2.Err == exec.ErrNotFound {
 		return none
 	}
 	return scp
+}
+
+// detect returns which tool to use.
+func detect() tool {
+	if t := detectRsync(); t != none {
+		return t
+	}
+	if t := detectPscp(); t != none {
+		return t
+	}
+	return detectScp()
 }
 
 // toPkg returns one or multiple packages matching the relpath.
@@ -192,11 +247,18 @@ func mainImpl() error {
 	var t tool
 	switch *preferredTool {
 	case "rsync":
-		t = rsync
+		// Do a quick version detect.
+		if t = detectRsync(); t == none {
+			return errors.New("Failed to detect rsync")
+		}
 	case "pscp":
-		t = pscp
+		if t = detectPscp(); t == none {
+			return errors.New("Failed to detect pscp")
+		}
 	case "scp":
-		t = scp
+		if t = detectScp(); t == none {
+			return errors.New("Failed to detect scp")
+		}
 	case "":
 		if t = detect(); t == none {
 			return errors.New("Please make sure at least one of rsync, scp or pscp is in PATH")
