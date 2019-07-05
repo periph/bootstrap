@@ -3,12 +3,6 @@
 
 [[projects]]
   branch = "master"
-  name = "github.com/DHowett/go-plist"
-  packages = ["."]
-  revision = "500bd5b9081b5957ac10389f86e069869f00c348"
-
-[[projects]]
-  branch = "master"
   name = "github.com/rekby/mbr"
   packages = ["."]
   revision = "8c28b6465703c4dde586a09aeca764485f76b511"

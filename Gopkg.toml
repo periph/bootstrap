@@ -23,10 +23,6 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/DHowett/go-plist"
-
-[[constraint]]
-  branch = "master"
   name = "github.com/rekby/mbr"
 
 [[constraint]]

@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DHowett/go-plist"
+	"howett.net/plist"
 )
 
 // GetTimeLocation returns the time location, e.g. America/Toronto.
