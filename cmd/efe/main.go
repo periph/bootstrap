@@ -201,7 +201,7 @@ func modifyEXT4Inner(f *os.File) error {
 	prefix := []byte(oldRcLocal)
 	buf := make([]byte, 512)
 	for ; ; offset += 512 {
-		if _, err := root.ReadAt(buf, offset); err != nil {
+		if _, err = root.ReadAt(buf, offset); err != nil {
 			return err
 		}
 		if bytes.Equal(buf[:len(prefix)], prefix) {
@@ -340,7 +340,7 @@ func mainImpl() error {
 	}
 	e := filepath.Ext(imgpath)
 	imgmod := imgpath[:len(imgpath)-len(e)] + "-mod" + e
-	if err := copyFile(imgmod, imgpath, 0666); err != nil {
+	if err = copyFile(imgmod, imgpath, 0666); err != nil {
 		return err
 	}
 	if err = modifyEXT4(imgmod); err != nil {
@@ -350,7 +350,7 @@ func mainImpl() error {
 	if runtime.GOOS != "windows" {
 		fmt.Printf("This script has minimal use of 'sudo' for 'dd' to format the SDCard\n\n")
 	}
-	if err := img.Flash(imgmod, *sdCard); err != nil {
+	if err = img.Flash(imgmod, *sdCard); err != nil {
 		return err
 	}
 

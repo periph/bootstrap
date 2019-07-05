@@ -153,7 +153,7 @@ Push two specific executables in the subdirectory of the current one:
 push -host pi@raspberrypi ./gpio-read ./gpio-write
 ```
 
-Use a special GOARCH instead of the default (`arm`), for example when targetting
+Use a special GOARCH instead of the default (`arm`), for example when targeting
 a ARM64 host:
 
 ```
