@@ -319,16 +319,58 @@ var (
 	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
 )
 
-type lsblk struct {
-	BlockDevices []struct {
-		Name       string
-		MajMin     string `json:"maj:min"`
-		RM         string
-		Size       string
-		RO         string
-		Type       string
-		MountPoint string
+type blockDevice struct {
+	Name string
+	// MajMin is the major and minor "device number".
+	MajMin string `json:"maj:min"`
+	// RM means removable media.
+	RM   string
+	Size string
+	// RO means read-only.
+	RO         string
+	Type       string
+	MountPoint string
+	Children   []blockDevice
+}
+
+// isSDCard returns true if the block device looks like a removable drive.
+func (b *blockDevice) isSDCard() bool {
+	// Do not check for RM == "1". The reason is that for some embedded SD card
+	// readers (like Lenovo x250 embedded SD card reader), RM is set to "0". :(
+	if b.RO != "0" || b.Type != "disk" {
+		return false
 	}
+	// Normally a disk is not mounted itself, as it contains partitions that
+	// are themselves mounted. For safety ignore any disk that are also a
+	// mount point.
+	if b.MountPoint != "" {
+		return false
+	}
+	if b.isSystem() {
+		return false
+	}
+	return true
+}
+
+// isSystem returns true if this blockdevice has a system partition.
+//
+// This can be root "/", the boot partition "/boot" or "/boot/efi" or the swap
+// partition "[SWAP]" mounted on it.
+func (b *blockDevice) isSystem() bool {
+	if s := b.MountPoint; s == "/" || strings.HasPrefix(s, "/boot") || s == "[SWAP]" {
+		return true
+	}
+	for i := range b.Children {
+		if b.Children[i].isSystem() {
+			return true
+		}
+	}
+	return false
+}
+
+// lsblkOutput is the output by "lsblk --json".
+type lsblkOutput struct {
+	BlockDevices []blockDevice
 }
 
 func listSDCardsLinux() []string {
@@ -336,15 +378,19 @@ func listSDCardsLinux() []string {
 	if err != nil {
 		return nil
 	}
-	v := lsblk{}
-	err = json.Unmarshal([]byte(b), &v)
-	if err != nil {
+	v := lsblkOutput{}
+	if err = json.Unmarshal([]byte(b), &v); err != nil {
 		return nil
 	}
 	var out []string
-	for _, dev := range v.BlockDevices {
-		if dev.RM == "1" && dev.RO == "0" && dev.Type == "disk" {
-			out = append(out, "/dev/"+dev.Name)
+	// If there is only one mount point, not worth bothering.
+	// TODO(maruel): Can we always safely assume that the first block device
+	// listed is the root or boot partition? Maybe not.
+	if len(v.BlockDevices) >= 2 {
+		for i := range v.BlockDevices {
+			if v.BlockDevices[i].isSDCard() {
+				out = append(out, "/dev/"+v.BlockDevices[i].Name)
+			}
 		}
 	}
 	return out
