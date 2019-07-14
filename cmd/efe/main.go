@@ -90,6 +90,11 @@ var (
 	v            = flag.Bool("v", false, "log verbosely")
 )
 
+// sdCardsFound is the list of SD cards found on the system. Cache the value as
+// getting the list may imply shelling out a process, and it's inefficient to
+// do it multiple times for the lifetime of this process.
+var sdCardsFound = img.ListSDCards()
+
 func init() {
 	flag.Var(&distro.Manufacturer, "manufacturer", img.ManufacturerHelp())
 	flag.Var(&distro.Board, "board", img.BoardHelp())
@@ -99,21 +104,20 @@ func init() {
 // Utils
 
 func getDefaultSDCard() string {
-	if b := img.ListSDCards(); len(b) == 1 {
-		return b[0]
+	if len(sdCardsFound) == 1 {
+		return sdCardsFound[0]
 	}
 	return ""
 }
 
 func getSDCardHelp() string {
-	b := img.ListSDCards()
-	if len(b) == 0 {
+	if len(sdCardsFound) == 0 {
 		return fmt.Sprintf("Path to SDCard; be sure to insert one first")
 	}
-	if len(b) == 1 {
+	if len(sdCardsFound) == 1 {
 		return fmt.Sprintf("Path to SDCard")
 	}
-	return fmt.Sprintf("Path to SDCard; one of %s", strings.Join(b, ","))
+	return fmt.Sprintf("Path to SDCard; one of %s", strings.Join(sdCardsFound, ","))
 }
 
 // copyFile copies src from dst.
