@@ -212,7 +212,7 @@ EOF
       hdmi_mode=87
       hdmi_cvt 800 480 60 6 0 0 0
       # Enable touchscreen:
-      # Not necessary on Jessie Lite since it boots in console mode. :)
+      # Not necessary on Raspbian Lite since it boots in console mode. :)
       # Some displays use 22, others 25.
       # Enabling this means the SPI bus cannot be used anymore.
       #dtoverlay=ads7846,penirq=22,penirq_pull=2,speed=10000,xohms=150

@@ -338,6 +338,9 @@ func mainImpl() error {
 		return errors.New("-sdcard is required")
 	}
 
+	if *wifiSSID == "" {
+		fmt.Println("Wifi will not be configured!")
+	}
 	imgpath, err := distro.Fetch()
 	if err != nil {
 		return err

@@ -282,7 +282,7 @@ func (d *Distro) fetchRaspberryPi() (string, error) {
 		return "", err
 	}
 	if f, _ := os.Open(imgpath); f != nil {
-		fmt.Printf("- Reusing Raspbian Jessie Lite image %s\n", imgpath)
+		fmt.Printf("- Reusing Raspbian Lite image %s\n", imgpath)
 		f.Close()
 		return imgpath, nil
 	}
