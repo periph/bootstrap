@@ -157,7 +157,7 @@ function do_raspberrypi {
   echo "- do_raspberrypi: Raspbian specific changes"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
-  run sudo apt-get -y remove triggerhappy
+  run sudo apt-get -y remove libraspberrypi-doc triggerhappy
   run sudo apt-get install -y ntpdate
 
   echo "  Enable SPI0, I2C1, Camera, ssh"
