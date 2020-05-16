@@ -28,32 +28,35 @@ type Manufacturer string
 const (
 	// HardKernel can be bought at http://hardkernel.com
 	HardKernel Manufacturer = "hardkernel"
-	// NextThingCo can be bought at https://getchip.com
+	// Raspberry is Raspberry Pi foundation; https://www.raspberrypi.org/about/
+	Raspberry Manufacturer = "raspberrypi"
+
+	// NextThingCo was a company at https://getchip.com
 	NextThingCo Manufacturer = "ntc"
-	// RaspberryPi is Raspberry Pi foundation; https://www.raspberrypi.org/about/
-	RaspberryPi Manufacturer = "raspberrypi"
 )
 
 func (m *Manufacturer) String() string {
 	return string(*m)
 }
 
+var manufacturers = []Manufacturer{HardKernel, NextThingCo, Raspberry}
+
 // Set implements flag.Value.
 func (m *Manufacturer) Set(s string) error {
-	switch Manufacturer(s) {
-	case HardKernel, NextThingCo, RaspberryPi:
-		*m = Manufacturer(s)
-		return nil
-	default:
-		return errors.New("unsupported manufacturer")
+	for _, e := range manufacturers {
+		if s == string(e) {
+			*m = Manufacturer(e)
+			return nil
+		}
 	}
+	return errors.New("unsupported manufacturer")
 }
 
 // ManufacturerHelp generates the help for Manufacturer.
 func ManufacturerHelp() string {
 	var names []string
-	for _, k := range []Manufacturer{HardKernel, NextThingCo, RaspberryPi} {
-		names = append(names, string(k))
+	for _, e := range manufacturers {
+		names = append(names, string(e))
 	}
 	sort.Strings(names)
 	return fmt.Sprintf("Board manufacturer: %s", strings.Join(names, ", "))
@@ -63,27 +66,27 @@ func ManufacturerHelp() string {
 func (m *Manufacturer) boards() []Board {
 	switch *m {
 	case HardKernel:
-		return []Board{"odroidc1"}
+		return []Board{OdroidC1}
 	case NextThingCo:
-		return []Board{"chip", "chippro", "pocketchip"}
-	case RaspberryPi:
+		return []Board{CHIP, CHIPPro, PocketCHIP}
+	case Raspberry:
 		// All boards use the same images, so from our point of view, they are all
 		// the same.
-		return []Board{"raspberrypi"}
+		return []Board{RaspberryPi}
 	default:
 		return nil
 	}
 }
 
 // distros return the distros valid.
-func (m *Manufacturer) distros() []string {
+func (m *Manufacturer) distros() []Distro {
 	switch *m {
 	case HardKernel:
-		return []string{"ubuntu"}
+		return []Distro{Ubuntu}
 	case NextThingCo:
-		return []string{"debian-headless"}
-	case RaspberryPi:
-		return []string{"raspbian-lite"}
+		return []Distro{Debian}
+	case Raspberry:
+		return []Distro{Raspbian}
 	default:
 		return nil
 	}
@@ -94,16 +97,31 @@ func (m *Manufacturer) distros() []string {
 // Board is a board from a brand manufacturer.
 type Board string
 
+const (
+	// OdroidC1 is a board sold by HardKernel.
+	OdroidC1 Board = "odroidc1"
+	// RaspberryPi is a series of boards sold by Raspberry.
+	RaspberryPi Board = "raspberrypi"
+
+	// CHIP used to be sold by NextThingCo.
+	CHIP Board = "chip"
+	// CHIPPro used to be sold by NextThingCo.
+	CHIPPro Board = "chippro"
+	// PocketCHIP used to be sold by NextThingCo.
+	PocketCHIP Board = "pocketchip"
+)
+
+var boards = []Board{OdroidC1, RaspberryPi, CHIP, CHIPPro, PocketCHIP}
+
 func (b *Board) String() string {
 	return string(*b)
 }
 
 // Set implements flag.Value.
 func (b *Board) Set(s string) error {
-	bb := Board(s)
-	for _, board := range boards {
-		if bb == board {
-			*b = bb
+	for _, e := range boards {
+		if s == string(e) {
+			*b = Board(e)
 			return nil
 		}
 	}
@@ -112,19 +130,50 @@ func (b *Board) Set(s string) error {
 
 // BoardHelp generates the help for Board.
 func BoardHelp() string {
-	names := make([]string, len(boards))
-	for i, b := range boards {
-		names[i] = string(b)
+	var names []string
+	for _, e := range boards {
+		names = append(names, string(e))
 	}
+	sort.Strings(names)
 	return fmt.Sprintf("Boards: %s", strings.Join(names, ", "))
 }
 
-var boards []Board
+// Distro is an OS distribution.
+type Distro string
 
-func init() {
-	for _, k := range []Manufacturer{HardKernel, NextThingCo, RaspberryPi} {
-		boards = append(boards, k.boards()...)
+const (
+	// Debian is https://www.debian.org/
+	Debian Distro = "debian"
+	// Raspbian is https://www.raspberrypi.org/downloads/raspbian/
+	Raspbian Distro = "raspbian"
+	// Ubuntu is https://ubuntu.com/
+	Ubuntu Distro = "ubuntu"
+)
+
+var distros = []Distro{Debian, Raspbian, Ubuntu}
+
+func (d *Distro) String() string {
+	return string(*d)
+}
+
+// Set implements flag.Value.
+func (d *Distro) Set(s string) error {
+	for _, e := range distros {
+		if s == string(e) {
+			*d = Distro(e)
+			return nil
+		}
 	}
+	return errors.New("unsupported distro")
+}
+
+// DistroHelp generates the help for Distro.
+func DistroHelp() string {
+	names := make([]string, len(distros))
+	for i, d := range distros {
+		names[i] = string(d)
+	}
+	return fmt.Sprintf("Distros: %s", strings.Join(names, ", "))
 }
 
 //
@@ -133,7 +182,7 @@ func init() {
 type Image struct {
 	Manufacturer Manufacturer
 	Board        Board
-	Distro       string
+	Distro       Distro
 }
 
 func (i *Image) String() string {
@@ -148,12 +197,12 @@ func (i *Image) Check() error {
 		}
 		// Reverse lookup.
 		switch i.Board {
-		case "chip", "chippro", "pocketchip":
+		case CHIP, CHIPPro, PocketCHIP:
 			i.Manufacturer = NextThingCo
-		case "odroidc1":
+		case OdroidC1:
 			i.Manufacturer = HardKernel
-		case "raspberrypi":
-			i.Manufacturer = RaspberryPi
+		case RaspberryPi:
+			i.Manufacturer = Raspberry
 		default:
 			return errors.New("unknown board")
 		}
@@ -178,11 +227,13 @@ func (i *Image) Check() error {
 		}
 	}
 
-	di := i.Manufacturer.distros()
-	if len(di) == 0 {
-		return errors.New("unknown manufacturer")
+	if i.Distro == "" {
+		di := i.Manufacturer.distros()
+		if len(di) == 0 {
+			return errors.New("unknown manufacturer")
+		}
+		i.Distro = di[0]
 	}
-	i.Distro = di[0]
 	return nil
 }
 
@@ -193,7 +244,7 @@ func (i *Image) DefaultUser() string {
 		return "chip"
 	case NextThingCo:
 		return "odroid"
-	case RaspberryPi:
+	case Raspberry:
 		return "pi"
 	default:
 		return ""
@@ -207,7 +258,7 @@ func (i *Image) DefaultHostname() string {
 		return "chip"
 	case NextThingCo:
 		return "odroid"
-	case RaspberryPi:
+	case Raspberry:
 		return "raspberrypi"
 	default:
 		return ""
@@ -223,7 +274,7 @@ func (i *Image) Fetch() (string, error) {
 		return i.fetchHardKernel()
 	case NextThingCo:
 		return "", errors.New("implement me")
-	case RaspberryPi:
+	case Raspberry:
 		return i.fetchRaspberryPi()
 	default:
 		// - https://www.armbian.com/download/

@@ -98,7 +98,7 @@ var sdCardsFound = img.ListSDCards()
 func init() {
 	flag.Var(&image.Manufacturer, "manufacturer", img.ManufacturerHelp())
 	flag.Var(&image.Board, "board", img.BoardHelp())
-	flag.StringVar(&image.Distro, "distro", "", "Specific distro, optional")
+	flag.Var(&image.Distro, "distro", img.DistroHelp())
 }
 
 // Utils
@@ -235,8 +235,7 @@ func firstBootArgs() string {
 	}
 	// For Raspbian, we can dump a /boot/wpa_supplicant.conf that will be picked
 	// up automatically.
-	// TODO(maruel): RaspberryPi != Raspbian.
-	if image.Manufacturer != img.RaspberryPi {
+	if image.Distro != img.Raspbian {
 		args += " -wc " + *wifiCountry
 		if len(*wifiSSID) != 0 {
 			// TODO(maruel): Proper shell escaping.
@@ -281,8 +280,7 @@ func setupFirstBoot(boot string) error {
 	}
 	// For Raspbian, we can dump a /boot/wpa_supplicant.conf that will be picked
 	// up automatically.
-	// TODO(maruel): RaspberryPi != Raspbian.
-	if image.Manufacturer == img.RaspberryPi && len(*wifiSSID) != 0 {
+	if image.Distro == img.Raspbian && len(*wifiSSID) != 0 {
 		c := fmt.Sprintf(raspberryPiWPASupplicant, *wifiCountry, *wifiSSID, wpaPSK(*wifiPass, *wifiSSID))
 		if err := ioutil.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0644); err != nil {
 			return err
@@ -326,12 +324,12 @@ func mainImpl() error {
 	if err := image.Check(); err != nil {
 		return err
 	}
-	if image.Manufacturer != img.RaspberryPi {
+	if image.Distro != img.Raspbian {
 		if *fiveInches {
-			return errors.New("-5inch only make sense with -manufacturer raspberrypi")
+			return errors.New("-5inch only make sense with -distro raspbian")
 		}
 		if *forceUART {
-			return errors.New("-forceuart only make sense with -manufacturer raspberrypi")
+			return errors.New("-forceuart only make sense with -distro raspbian")
 		}
 	}
 	if *sdCard == "" {
