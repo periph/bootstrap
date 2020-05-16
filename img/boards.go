@@ -129,45 +129,45 @@ func init() {
 
 //
 
-// Distro is an image that can be used on a board by a manufacturer.
-type Distro struct {
+// Image is an image that can be used on a board by a manufacturer.
+type Image struct {
 	Manufacturer Manufacturer
 	Board        Board
 	Distro       string
 }
 
-func (d *Distro) String() string {
-	return fmt.Sprintf("%s:%s:%s", d.Manufacturer, d.Board, d.Distro)
+func (i *Image) String() string {
+	return fmt.Sprintf("%s:%s:%s", i.Manufacturer, i.Board, i.Distro)
 }
 
 // Check sets default values and confirm specified values.
-func (d *Distro) Check() error {
-	if d.Manufacturer == "" {
-		if d.Board == "" {
+func (i *Image) Check() error {
+	if i.Manufacturer == "" {
+		if i.Board == "" {
 			return errors.New("specify at least one of manufacturer or board")
 		}
 		// Reverse lookup.
-		switch d.Board {
+		switch i.Board {
 		case "chip", "chippro", "pocketchip":
-			d.Manufacturer = NextThingCo
+			i.Manufacturer = NextThingCo
 		case "odroidc1":
-			d.Manufacturer = HardKernel
+			i.Manufacturer = HardKernel
 		case "raspberrypi":
-			d.Manufacturer = RaspberryPi
+			i.Manufacturer = RaspberryPi
 		default:
 			return errors.New("unknown board")
 		}
 	} else {
-		b := d.Manufacturer.boards()
+		b := i.Manufacturer.boards()
 		if len(b) == 0 {
 			return errors.New("unknown manufacturer")
 		}
-		if d.Board == "" {
-			d.Board = b[0]
+		if i.Board == "" {
+			i.Board = b[0]
 		} else {
 			found := false
-			for _, i := range b {
-				if d.Board == i {
+			for _, j := range b {
+				if i.Board == j {
 					found = true
 					break
 				}
@@ -178,17 +178,17 @@ func (d *Distro) Check() error {
 		}
 	}
 
-	di := d.Manufacturer.distros()
+	di := i.Manufacturer.distros()
 	if len(di) == 0 {
 		return errors.New("unknown manufacturer")
 	}
-	d.Distro = di[0]
+	i.Distro = di[0]
 	return nil
 }
 
 // DefaultUser returns the default user account created by the image.
-func (d *Distro) DefaultUser() string {
-	switch d.Manufacturer {
+func (i *Image) DefaultUser() string {
+	switch i.Manufacturer {
 	case HardKernel:
 		return "chip"
 	case NextThingCo:
@@ -201,8 +201,8 @@ func (d *Distro) DefaultUser() string {
 }
 
 // DefaultHostname returns the default hostname as set by the image.
-func (d *Distro) DefaultHostname() string {
-	switch d.Manufacturer {
+func (i *Image) DefaultHostname() string {
+	switch i.Manufacturer {
 	case HardKernel:
 		return "chip"
 	case NextThingCo:
@@ -217,24 +217,24 @@ func (d *Distro) DefaultHostname() string {
 // Fetch fetches the distro image remotely.
 //
 // Returns the absolute path to the file downloaded.
-func (d *Distro) Fetch() (string, error) {
-	switch d.Manufacturer {
+func (i *Image) Fetch() (string, error) {
+	switch i.Manufacturer {
 	case HardKernel:
-		return d.fetchHardKernel()
+		return i.fetchHardKernel()
 	case NextThingCo:
 		return "", errors.New("implement me")
 	case RaspberryPi:
-		return d.fetchRaspberryPi()
+		return i.fetchRaspberryPi()
 	default:
 		// - https://www.armbian.com/download/
 		// - https://beagleboard.org/latest-images better to flash then run setup.sh
 		//   manually.
 		// - https://flash.getchip.com/ better to flash then run setup.sh manually.
-		return "", fmt.Errorf("don't know how to fetch %s", d)
+		return "", fmt.Errorf("don't know how to fetch %s", i)
 	}
 }
 
-func (d *Distro) fetchHardKernel() (string, error) {
+func (i *Image) fetchHardKernel() (string, error) {
 	// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1
 	// http://odroid.in/ubuntu_16.04lts/
 	mirror := "https://odroid.in/ubuntu_16.04lts/"
@@ -275,7 +275,7 @@ func (d *Distro) fetchHardKernel() (string, error) {
 	return imgpath, nil
 }
 
-func (d *Distro) fetchRaspberryPi() (string, error) {
+func (i *Image) fetchRaspberryPi() (string, error) {
 	imgurl, imgname := raspbianGetLatestImageURL()
 	imgpath, err := filepath.Abs(imgname)
 	if err != nil {

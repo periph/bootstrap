@@ -76,7 +76,7 @@ network={
 `
 
 var (
-	distro       img.Distro
+	image        img.Image
 	sshKey       = flag.String("ssh-key", img.FindPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
 	wifiCountry  = flag.String("wifi-country", img.GetCountry(), "Country setting for Wifi; affect usable bands")
@@ -96,9 +96,9 @@ var (
 var sdCardsFound = img.ListSDCards()
 
 func init() {
-	flag.Var(&distro.Manufacturer, "manufacturer", img.ManufacturerHelp())
-	flag.Var(&distro.Board, "board", img.BoardHelp())
-	// TODO(maruel): flag.StringVar(&distro.Distro, "distro", "", "Specific distro, optional")
+	flag.Var(&image.Manufacturer, "manufacturer", img.ManufacturerHelp())
+	flag.Var(&image.Board, "board", img.BoardHelp())
+	flag.StringVar(&image.Distro, "distro", "", "Specific distro, optional")
 }
 
 // Utils
@@ -236,7 +236,7 @@ func firstBootArgs() string {
 	// For Raspbian, we can dump a /boot/wpa_supplicant.conf that will be picked
 	// up automatically.
 	// TODO(maruel): RaspberryPi != Raspbian.
-	if distro.Manufacturer != img.RaspberryPi {
+	if image.Manufacturer != img.RaspberryPi {
 		args += " -wc " + *wifiCountry
 		if len(*wifiSSID) != 0 {
 			// TODO(maruel): Proper shell escaping.
@@ -282,7 +282,7 @@ func setupFirstBoot(boot string) error {
 	// For Raspbian, we can dump a /boot/wpa_supplicant.conf that will be picked
 	// up automatically.
 	// TODO(maruel): RaspberryPi != Raspbian.
-	if distro.Manufacturer == img.RaspberryPi && len(*wifiSSID) != 0 {
+	if image.Manufacturer == img.RaspberryPi && len(*wifiSSID) != 0 {
 		c := fmt.Sprintf(raspberryPiWPASupplicant, *wifiCountry, *wifiSSID, wpaPSK(*wifiPass, *wifiSSID))
 		if err := ioutil.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0644); err != nil {
 			return err
@@ -323,10 +323,10 @@ func mainImpl() error {
 	if (*wifiSSID != "") != (*wifiPass != "") {
 		return errors.New("use both --wifi-ssid and --wifi-pass")
 	}
-	if err := distro.Check(); err != nil {
+	if err := image.Check(); err != nil {
 		return err
 	}
-	if distro.Manufacturer != img.RaspberryPi {
+	if image.Manufacturer != img.RaspberryPi {
 		if *fiveInches {
 			return errors.New("-5inch only make sense with -manufacturer raspberrypi")
 		}
@@ -341,7 +341,7 @@ func mainImpl() error {
 	if *wifiSSID == "" {
 		fmt.Println("Wifi will not be configured!")
 	}
-	imgpath, err := distro.Fetch()
+	imgpath, err := image.Fetch()
 	if err != nil {
 		return err
 	}
@@ -388,7 +388,7 @@ func mainImpl() error {
 
 	fmt.Printf("\nYou can now remove the SDCard safely and boot your micro computer\n")
 	fmt.Printf("Connect with:\n")
-	fmt.Printf("  ssh -o StrictHostKeyChecking=no %s@%s\n\n", distro.DefaultUser(), distro.DefaultHostname())
+	fmt.Printf("  ssh -o StrictHostKeyChecking=no %s@%s\n\n", image.DefaultUser(), image.DefaultHostname())
 	fmt.Printf("You can follow the update process by either:\n")
 	fmt.Printf("- connecting a monitor\n")
 	fmt.Printf("- connecting to the serial port\n")
