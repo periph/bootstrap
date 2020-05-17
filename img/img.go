@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -319,15 +320,57 @@ var (
 	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
 )
 
+// boolOrInt abstract the fact that on lsblk 2.31 some values are printed as
+// "0" or "1", but on 2.34 they are true or false.
+type boolOrInt bool
+
+func (b *boolOrInt) UnmarshalJSON(d []byte) error {
+	vb := false
+	if json.Unmarshal(d, &vb) == nil {
+		*b = boolOrInt(vb)
+		return nil
+	}
+	vi := 0
+	if err := json.Unmarshal(d, &vi); err != nil {
+		return err
+	}
+	*b = vi != 0
+	return nil
+}
+
+type intOrString int64
+
+func (i *intOrString) UnmarshalJSON(d []byte) error {
+	vi := int64(0)
+	if json.Unmarshal(d, &vi) == nil {
+		*i = intOrString(vi)
+		return nil
+	}
+	vs := ""
+	if err := json.Unmarshal(d, &vs); err != nil {
+		return err
+	}
+	v, err := strconv.ParseInt(vs, 10, 64)
+	if err != nil {
+		return err
+	}
+	*i = intOrString(v)
+	return nil
+}
+
+// blockDevice is the schema of the output of lsblk --json --bytes.
+//
+// The output changed somewhere between 2.31 and 2.34 so boolOrInt and
+// intOrString are used to hides the differences in the schema.
 type blockDevice struct {
 	Name string
 	// MajMin is the major and minor "device number".
 	MajMin string `json:"maj:min"`
 	// RM means removable media.
-	RM   string
-	Size int64 `json:",string"`
+	RM   boolOrInt
+	Size intOrString
 	// RO means read-only.
-	RO         string
+	RO         boolOrInt
 	Type       string
 	MountPoint string
 	Children   []blockDevice
@@ -341,7 +384,7 @@ type blockDevice struct {
 func (b *blockDevice) isSDCard() bool {
 	// Do not check for RM == "1". The reason is that for some embedded SD card
 	// readers (like Lenovo x250 embedded SD card reader), RM is set to "0". :(
-	if b.RO != "0" || b.Type != "disk" {
+	if b.RO || b.Type != "disk" {
 		return false
 	}
 	// Normally a disk is not mounted itself, as it contains partitions that
@@ -384,6 +427,7 @@ func listSDCardsLinux() []string {
 	}
 	v := lsblkOutput{}
 	if err = json.Unmarshal([]byte(b), &v); err != nil {
+		log.Printf("failed to parse lsblk output: %v", err)
 		return nil
 	}
 	var out []string
