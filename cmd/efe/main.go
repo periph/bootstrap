@@ -147,9 +147,8 @@ func modifyEXT4(img string) error {
 		return err
 	}
 	err = modifyEXT4Inner(f)
-	err2 := f.Close()
-	if err == nil {
-		return err2
+	if err2 := f.Close(); err == nil {
+		err = err2
 	}
 	return err
 }
@@ -189,7 +188,7 @@ func (f *fileDisk) WriteAt(p []byte, off int64) (int, error) {
 func modifyEXT4Inner(f *os.File) error {
 	m, err := mbr.Read(f)
 	if err != nil {
-		return nil
+		return fmt.Errorf("failed to read MBR: %v", err)
 	}
 	if err = m.Check(); err != nil {
 		return err
@@ -206,7 +205,7 @@ func modifyEXT4Inner(f *os.File) error {
 	buf := make([]byte, 512)
 	for ; ; offset += 512 {
 		if _, err = root.ReadAt(buf, offset); err != nil {
-			return err
+			return fmt.Errorf("failed to read at offset %d while seaching for /etc/rc.local: %v", offset, err)
 		}
 		if bytes.Equal(buf[:len(prefix)], prefix) {
 			log.Printf("found /etc/rc.local at offset %d", offset)
