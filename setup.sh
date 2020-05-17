@@ -574,7 +574,7 @@ function do_rename_host {
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   echo "  New hostname is: $HOST"
-  if [ "$BOARD" = "raspberrypi" ]; then
+  if [ "$DIST" = "raspbian" ]; then
     run sudo raspi-config nonint do_hostname $HOST
   else
     #OLD="$(hostname)"
