@@ -866,7 +866,7 @@ function detect_board {
   if [ "$DIST" = "raspbian" ]; then
     BOARD=raspberrypi
   fi
-  if [ grep -q 'Raspberry Pi' /proc/cpuinfo ]; then
+  if grep -q 'Raspberry Pi' /proc/cpuinfo; then
     BOARD=raspberrypi
   fi
   echo "  Detected board: $BOARD"
