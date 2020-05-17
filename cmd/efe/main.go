@@ -33,10 +33,12 @@ import (
 )
 
 // oldRcLocal is the start of /etc/rc.local as found on Debian derived
-// distributions.
+// distributions before Debian 10 and Ubuntu 18.04.
 //
 // The comments are essentially the free space available to edit the file
 // without having to understand EXT4. :)
+//
+// TODO(maruel): Find a new way for newer distributions.
 const oldRcLocal = "#!/bin/sh -e\n#\n# rc.local\n#\n# This script is executed at the end of each multiuser runlevel.\n# Make sure that the script will \"exit 0\" on success or any other\n# value on error.\n#\n# In order to enable or disable this script just change the execution\n# bits.\n#\n# By default this script does nothing.\n"
 
 // denseRcLocal is a 'dense' version of img.RcLocalContent.
@@ -140,17 +142,17 @@ func copyFile(dst, src string, mode os.FileMode) error {
 
 // Editing EXT4
 
-func modifyEXT4(img string) error {
+func modifyEXT4(img string) (bool, error) {
 	fmt.Printf("- Modifying image %s\n", img)
 	f, err := os.OpenFile(img, os.O_RDWR, 0666)
 	if err != nil {
-		return err
+		return false, err
 	}
-	err = modifyEXT4Inner(f)
+	modified, err := modifyEXT4Inner(f)
 	if err2 := f.Close(); err == nil {
 		err = err2
 	}
-	return err
+	return modified, err
 }
 
 type fileDisk struct {
@@ -168,7 +170,7 @@ func (f *fileDisk) Len() int64 {
 }
 
 func (f *fileDisk) ReadAt(p []byte, off int64) (int, error) {
-	if off+f.off+int64(len(p)) > f.size {
+	if off+int64(len(p)) > f.size {
 		return 0, io.EOF
 	}
 	return f.f.ReadAt(p, off+f.off)
@@ -179,19 +181,19 @@ func (f *fileDisk) SectorSize() int {
 }
 
 func (f *fileDisk) WriteAt(p []byte, off int64) (int, error) {
-	if off+f.off+int64(len(p)) > f.size {
+	if off+int64(len(p)) > f.size {
 		return 0, errors.New("overflow")
 	}
 	return f.f.WriteAt(p, off+f.off)
 }
 
-func modifyEXT4Inner(f *os.File) error {
+func modifyEXT4Inner(f *os.File) (bool, error) {
 	m, err := mbr.Read(f)
 	if err != nil {
-		return fmt.Errorf("failed to read MBR: %v", err)
+		return false, fmt.Errorf("failed to read MBR: %v", err)
 	}
 	if err = m.Check(); err != nil {
-		return err
+		return false, err
 	}
 	rootpart := m.GetPartition(2)
 	root := &fileDisk{f, int64(rootpart.GetLBAStart() * 512), int64(rootpart.GetLBALen() * 512)}
@@ -203,14 +205,17 @@ func modifyEXT4Inner(f *os.File) error {
 	offset := int64(0)
 	prefix := []byte(oldRcLocal)
 	buf := make([]byte, 512)
-	for ; ; offset += 512 {
+	for ; offset < root.Len(); offset += 512 {
 		if _, err = root.ReadAt(buf, offset); err != nil {
-			return fmt.Errorf("failed to read at offset %d while seaching for /etc/rc.local: %v", offset, err)
+			return false, fmt.Errorf("failed to read at offset %d while seaching for /etc/rc.local: %v", offset, err)
 		}
 		if bytes.Equal(buf[:len(prefix)], prefix) {
 			log.Printf("found /etc/rc.local at offset %d", offset)
 			break
 		}
+	}
+	if offset >= root.Len() {
+		return false, nil
 	}
 	// TODO(maruel): Keep everything before the "exit 0" before our injected
 	// lines.
@@ -218,7 +223,7 @@ func modifyEXT4Inner(f *os.File) error {
 	copy(buf, content)
 	log.Printf("Writing /etc/rc.local:\n%s", buf)
 	_, err = root.WriteAt(buf, offset)
-	return err
+	return true, err
 }
 
 func firstBootArgs() string {
@@ -347,8 +352,15 @@ func mainImpl() error {
 	if err = copyFile(imgmod, imgpath, 0666); err != nil {
 		return err
 	}
-	if err = modifyEXT4(imgmod); err != nil {
+	// TODO(maruel): Recent distros do not have a /etc/rc.local file.
+	modified, err := modifyEXT4(imgmod)
+	if err != nil {
 		return err
+	}
+	if !modified {
+		fmt.Printf("Couldn't modified the image to setup automatically on boot.\n")
+		fmt.Printf("You will have to ssh in and run:\n")
+		fmt.Printf("  /boot/firstboot.sh%s\n", firstBootArgs())
 	}
 	fmt.Printf("Warning! This will blow up everything in %s\n\n", *sdCard)
 	if runtime.GOOS != "windows" {
