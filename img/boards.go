@@ -70,8 +70,10 @@ func (m *Manufacturer) boards() []Board {
 	case NextThingCo:
 		return []Board{CHIP, CHIPPro, PocketCHIP}
 	case Raspberry:
-		// All boards use the same images, so from our point of view, they are all
-		// the same.
+		// All boards use the same images on Raspbian, so from our point of view,
+		// they are all the same.
+		// TODO(maruel): That's not true for Ubuntu, since they provide arm64
+		// images that only works on RPi3 and later.
 		return []Board{RaspberryPi}
 	default:
 		return nil
@@ -84,9 +86,11 @@ func (m *Manufacturer) distros() []Distro {
 	case HardKernel:
 		return []Distro{Ubuntu}
 	case NextThingCo:
+		// debian-headless
 		return []Distro{Debian}
 	case Raspberry:
-		return []Distro{Raspbian}
+		// raspbian-lite
+		return []Distro{Raspbian, Ubuntu}
 	default:
 		return nil
 	}
@@ -245,7 +249,13 @@ func (i *Image) DefaultUser() string {
 	case NextThingCo:
 		return "odroid"
 	case Raspberry:
-		return "pi"
+		if i.Distro == Raspbian {
+			return "pi"
+		}
+		if i.Distro == Ubuntu {
+			return "ubuntu"
+		}
+		return ""
 	default:
 		return ""
 	}
@@ -271,21 +281,25 @@ func (i *Image) DefaultHostname() string {
 func (i *Image) Fetch() (string, error) {
 	switch i.Manufacturer {
 	case HardKernel:
-		return i.fetchHardKernel()
+		return fetchHardKernel()
 	case NextThingCo:
 		return "", errors.New("implement me")
 	case Raspberry:
-		return i.fetchRaspberryPi()
-	default:
-		// - https://www.armbian.com/download/
-		// - https://beagleboard.org/latest-images better to flash then run setup.sh
-		//   manually.
-		// - https://flash.getchip.com/ better to flash then run setup.sh manually.
-		return "", fmt.Errorf("don't know how to fetch %s", i)
+		if i.Distro == Raspbian {
+			return fetchRPiRaspbianLite()
+		}
+		if i.Distro == Ubuntu {
+			return fetchRPiUbuntu()
+		}
 	}
+	// - https://www.armbian.com/download/
+	// - https://beagleboard.org/latest-images better to flash then run setup.sh
+	//   manually.
+	// - https://flash.getchip.com/ better to flash then run setup.sh manually.
+	return "", fmt.Errorf("don't know how to fetch %s", i)
 }
 
-func (i *Image) fetchHardKernel() (string, error) {
+func fetchHardKernel() (string, error) {
 	// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1
 	// http://odroid.in/ubuntu_16.04lts/
 	mirror := "https://odroid.in/ubuntu_16.04lts/"
@@ -301,32 +315,14 @@ func (i *Image) fetchHardKernel() (string, error) {
 		f.Close()
 		return imgpath, nil
 	}
-	fmt.Printf("- Fetching %s\n", imgpath)
-	resp, err := http.DefaultClient.Get(mirror + imgpath + ".xz")
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	r, err := xz.NewReader(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	f, err := os.Create(imgpath)
-	if err != nil {
-		return "", err
-	}
-	// Decompress as the file is being downloaded.
-	if _, err = io.Copy(f, r); err != nil {
-		f.Close()
-		return "", err
-	}
-	if err := f.Close(); err != nil {
+	imgurl := mirror + imgpath + ".xz"
+	if err := fetchXZ(imgurl, imgpath); err != nil {
 		return "", err
 	}
 	return imgpath, nil
 }
 
-func (i *Image) fetchRaspberryPi() (string, error) {
+func fetchRPiRaspbianLite() (string, error) {
 	imgurl, imgname := raspbianGetLatestImageURL()
 	imgpath, err := filepath.Abs(imgname)
 	if err != nil {
@@ -340,7 +336,6 @@ func (i *Image) fetchRaspberryPi() (string, error) {
 	fmt.Printf("- Fetching %s\n", imgpath)
 	// Read the whole file in memory. This is less than 300Mb. Save to disk if
 	// it is too much for your system.
-	// TODO(maruel): Progress bar?
 	z, err := fetchURL(imgurl)
 	if err != nil {
 		return "", err
@@ -373,6 +368,28 @@ func (i *Image) fetchRaspberryPi() (string, error) {
 		}
 	}
 	return "", errors.New("failed to find image in zip")
+}
+
+func fetchRPiUbuntu() (string, error) {
+	// https://ubuntu.com/download/raspberry-pi
+	// For now, if the user requests ubuntu, assume they want the 64 bits version.
+	// TODO(maruel): Do not hardcode the version.
+	ver := "20.04"
+	imgname := "ubuntu-" + ver + "-preinstalled-server-arm64+raspi.img"
+	imgpath, err := filepath.Abs(imgname)
+	if err != nil {
+		return "", err
+	}
+	if f, _ := os.Open(imgpath); f != nil {
+		fmt.Printf("- Reusing Ubuntu %s image %s\n", ver, imgpath)
+		f.Close()
+		return imgpath, nil
+	}
+	imgurl := "http://cdimage.ubuntu.com/releases/" + ver + "/release/" + imgname + ".xz"
+	if err := fetchXZ(imgurl, imgpath); err != nil {
+		return "", err
+	}
+	return imgpath, nil
 }
 
 //
@@ -450,4 +467,27 @@ func fetchURL(url string) ([]byte, error) {
 		return nil, fmt.Errorf("Failed to read %q: %v", url, err)
 	}
 	return reply, nil
+}
+
+func fetchXZ(imgurl, imgpath string) error {
+	fmt.Printf("- Fetching %s\n", imgurl)
+	resp, err := http.DefaultClient.Get(imgurl)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	r, err := xz.NewReader(resp.Body)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(imgpath)
+	if err != nil {
+		return err
+	}
+	// Decompress as the file is being downloaded.
+	if _, err = io.Copy(f, r); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
