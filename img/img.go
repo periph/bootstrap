@@ -325,7 +325,7 @@ type blockDevice struct {
 	MajMin string `json:"maj:min"`
 	// RM means removable media.
 	RM   string
-	Size string
+	Size int64 `json:",string"`
 	// RO means read-only.
 	RO         string
 	Type       string
@@ -334,6 +334,10 @@ type blockDevice struct {
 }
 
 // isSDCard returns true if the block device looks like a removable drive.
+//
+// Discards cards more than 70GiB in size. Since most workstations disks are
+// generally 120Gb and more, this reduces the risk of flashing a secondary disk
+// by accident. In this case, the user will have to specify the path manually.
 func (b *blockDevice) isSDCard() bool {
 	// Do not check for RM == "1". The reason is that for some embedded SD card
 	// readers (like Lenovo x250 embedded SD card reader), RM is set to "0". :(
@@ -349,7 +353,7 @@ func (b *blockDevice) isSDCard() bool {
 	if b.isSystem() {
 		return false
 	}
-	return true
+	return b.Size < 70*1024*1024*1024
 }
 
 // isSystem returns true if this blockdevice has a system partition.
@@ -368,13 +372,13 @@ func (b *blockDevice) isSystem() bool {
 	return false
 }
 
-// lsblkOutput is the output by "lsblk --json".
+// lsblkOutput is the output by "lsblk --json --bytes".
 type lsblkOutput struct {
 	BlockDevices []blockDevice
 }
 
 func listSDCardsLinux() []string {
-	b, err := capture("", "lsblk", "--json")
+	b, err := capture("", "lsblk", "--json", "--bytes")
 	if err != nil {
 		return nil
 	}
