@@ -153,8 +153,8 @@ function do_odroid {
 }
 
 
-function do_raspberrypi {
-  echo "- do_raspberrypi: Raspbian specific changes"
+function do_raspbian {
+  echo "- do_raspbian: Raspbian specific changes"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   run sudo apt-get -y remove \
@@ -229,8 +229,8 @@ EOF
 }
 
 
-function do_raspberrypi_no_hdmi {
-  echo "- do_raspberrypi_no_hdmi: Disable HDMI so save a few tens of milliAmp"
+function do_raspbian_no_hdmi {
+  echo "- do_raspbian_no_hdmi: Disable HDMI so save a few tens of milliAmp"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
   echo "  Disabling HDMI output"
@@ -773,8 +773,9 @@ function do_all {
     do_chip
   elif [ "$BOARD" = "odroid" ]; then
     do_odroid
-  elif [ "$BOARD" = "raspberrypi" ]; then
-    do_raspberrypi
+  #elif [ "$BOARD" = "raspberrypi" ]; then
+  elif [ "$DIST" = "raspbian" ]; then
+    do_raspbian
   fi
   do_ssh
   if [ $ACTION_GO -eq 1 ]; then
@@ -863,6 +864,9 @@ function detect_board {
     BOARD=odroid
   fi
   if [ "$DIST" = "raspbian" ]; then
+    BOARD=raspberrypi
+  fi
+  if [ grep -q 'Raspberry Pi' /proc/cpuinfo ]; then
     BOARD=raspberrypi
   fi
   echo "  Detected board: $BOARD"
