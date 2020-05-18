@@ -56,25 +56,30 @@ function do_beaglebone_trim {
   # Use the following to hunt and kill:
   #   dpkg --get-selections | less
   #
-  # Even with this, there won't be that much space left.
+  # With this, there should be 50% free disk space and 50% free memory.
+  run sudo apt remove -y --purge --allow-change-held-packages \
+    c9-core-installer
+  run sudo rm -rf /opt/cloud9
   run sudo apt remove -y --purge \
     apache2 apache2-bin apache2-data apache2-utils \
     ardupilot-copter-bbbmini ardupilot-copter-blue ardupilot-plane-bbbmini \
     ardupilot-plane-blue ardupilot-rover-bbbmini ardupilot-rover-blue \
+    bb-node-red-installer \
     bone101 \
-    c9-core-installer \
-    doc-beaglebone-getting-started doc-beaglebonegreen-getting-started \
-    doc-seeed-bbgw-getting-started
+    doc-beaglebone-getting-started \
     gpiod \
+    nginx nginx-common nginx-full \
     nodejs \
     roboticscape
-  run sudo apt autoremove
+  run sudo rm -rf /var/lib/cloud9
+  run sudo rm -rf /usr/local/lib/node_modules
+  run sudo apt autoremove -y
 
   # See https://periph.io/platform/beaglebone/ for more information.
   # Disable SoftAp0.
   run sudo systemctl stop bb-wl18xx-wlan0
   run sudo systemctl disable bb-wl18xx-wlan0
-  # Disable bluetooth.
+  # Disable bluetooth. This reduces the amount of chatter on 2GHz.
   run sudo systemctl stop bb-wl18xx-bluetooth
   run sudo systemctl disable bb-wl18xx-bluetooth
   run sudo systemctl stop bluetooth
