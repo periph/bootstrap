@@ -402,21 +402,24 @@ function do_golang {
 
   if [ "$(getconf LONG_BIT)" = "64" ]; then
     if [ "$GO_ARCH" = "arm" ]; then
-      echo "  Falling back to local go toolchain compilation"
-      do_golang_compile
-      return 0
+      GO_ARCH="arm64"
     fi
   fi
 
   # Magically figure out latest version for precompiled binaries.
-  echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME}"
-  local -r URL=$(curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1)
-  local -r FILENAME=$(basename ${URL})
-  local -r NEW_VERSION=$(echo $FILENAME | grep -oP '(?<=go)([0-9\.]+[0-9]+)')
+  local -r NEW_VERSION=$(curl -sS https://golang.org/VERSION?m=text)
+  echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME} VER=${NEW_VERSION}"
+
+  local -r FILENAME="${NEW_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz"
+  local -r URL="https://dl.google.com/go/${FILENAME}"
+
+  # Guesswork based on grepping the web page:
+  #local -r URL=$(curl -sS https://golang.org/dl/ | grep -Po "https://.+\.com/.+/go[0-9.]+${GO_OS_NAME}-${GO_ARCH}.tar.gz" | head -n 1)
+  #local -r NEW_VERSION=$(echo $FILENAME | grep -oP '(?<=go)([0-9\.]+[0-9]+)')
 
   # The non-guesswork version:
   #local -r BASE_URL=https://redirector.gvt1.com/edgedl/go/
-  #local -r GO_VERSION=1.9.2
+  #local -r GO_VERSION=1.14.3
   #local -r FILENAME=go${GO_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz
   #local -r URL=${BASE_URL}/${FILENAME}
 
@@ -424,7 +427,7 @@ function do_golang {
   # cost.
   local CURRENT_VERSION=""
   if (which go > /dev/null); then
-    local CURRENT_VERSION=$(go version | grep -oP '(?<=go)([0-9\.]+[0-9]+)')
+    local CURRENT_VERSION=$(go version | grep -oP '(go[0-9\.]+[0-9]+)')
   fi
   if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
     echo "  Current version is already at $CURRENT_VERSION. Skipping."
