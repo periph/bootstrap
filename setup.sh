@@ -61,9 +61,6 @@ function do_beaglebone_trim {
     c9-core-installer
   run sudo rm -rf /opt/cloud9
   run sudo apt remove -y --purge \
-    apache2 apache2-bin apache2-data apache2-utils \
-    ardupilot-copter-bbbmini ardupilot-copter-blue ardupilot-plane-bbbmini \
-    ardupilot-plane-blue ardupilot-rover-bbbmini ardupilot-rover-blue \
     bb-node-red-installer \
     bone101 \
     doc-beaglebone-getting-started \
