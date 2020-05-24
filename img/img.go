@@ -320,21 +320,21 @@ var (
 	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
 )
 
-// boolOrInt abstract the fact that on lsblk 2.31 some values are printed as
+// boolOrString abstract the fact that on lsblk 2.31 some values are printed as
 // "0" or "1", but on 2.34 they are true or false.
-type boolOrInt bool
+type boolOrString bool
 
-func (b *boolOrInt) UnmarshalJSON(d []byte) error {
+func (b *boolOrString) UnmarshalJSON(d []byte) error {
 	vb := false
 	if json.Unmarshal(d, &vb) == nil {
-		*b = boolOrInt(vb)
+		*b = boolOrString(vb)
 		return nil
 	}
-	vi := 0
+	vi := "0"
 	if err := json.Unmarshal(d, &vi); err != nil {
 		return err
 	}
-	*b = vi != 0
+	*b = vi != "0"
 	return nil
 }
 
@@ -360,17 +360,17 @@ func (i *intOrString) UnmarshalJSON(d []byte) error {
 
 // blockDevice is the schema of the output of lsblk --json --bytes.
 //
-// The output changed somewhere between 2.31 and 2.34 so boolOrInt and
+// The output changed somewhere between 2.31 and 2.34 so boolOrString and
 // intOrString are used to hides the differences in the schema.
 type blockDevice struct {
 	Name string
 	// MajMin is the major and minor "device number".
 	MajMin string `json:"maj:min"`
 	// RM means removable media.
-	RM   boolOrInt
+	RM   boolOrString
 	Size intOrString
 	// RO means read-only.
-	RO         boolOrInt
+	RO         boolOrString
 	Type       string
 	MountPoint string
 	Children   []blockDevice

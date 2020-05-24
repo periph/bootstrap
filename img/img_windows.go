@@ -63,27 +63,25 @@ func flashWindows(imgPath, disk string) error {
 	var dummy uint32
 	var handles []syscall.Handle
 	for _, v := range getVolumesForDisk(disk, 0) {
-		r, err := syscall.UTF16PtrFromString(v)
-		if err != nil {
+		var r *uint16
+		if r, err = syscall.UTF16PtrFromString(v); err != nil {
 			return err
 		}
-		fd, err := syscall.CreateFile(r, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, 0, 0)
-		if err != nil {
+		var fd syscall.Handle
+		if fd, err = syscall.CreateFile(r, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, 0, 0); err != nil {
 			return fmt.Errorf("failed to open %s: %v", v, err)
 		}
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa364575.aspx
 		// "Note that without a successful lock operation, a dismounted volume may
 		// be remounted by any process at any time"
-		err = syscall.DeviceIoControl(fd, fsctlLockVolume, nil, 0, nil, 0, &dummy, nil)
-		if err != nil {
+		if err = syscall.DeviceIoControl(fd, fsctlLockVolume, nil, 0, nil, 0, &dummy, nil); err != nil {
 			syscall.CloseHandle(fd)
 			return fmt.Errorf("failed to lock %s: %v", v, err)
 		}
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa364562.aspx
 		//   "It is important to lock the volume first, otherwise unpredictable
 		//   behavior may happen."
-		err = syscall.DeviceIoControl(fd, fsctlDismountVolume, nil, 0, nil, 0, &dummy, nil)
-		if err != nil {
+		if err = syscall.DeviceIoControl(fd, fsctlDismountVolume, nil, 0, nil, 0, &dummy, nil); err != nil {
 			syscall.CloseHandle(fd)
 			return fmt.Errorf("failed to unmount %s: %v", v, err)
 		}

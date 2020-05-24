@@ -42,11 +42,11 @@ const toolName = "nonersyncrsyncpscpscp"
 
 var toolIndex = [...]uint8{0, 4, 9, 14, 18, 21}
 
-func (i tool) String() string {
-	if i < 0 || i >= tool(len(toolIndex)-1) {
-		return fmt.Sprintf("tool(%d)", i)
+func (t tool) String() string {
+	if t < 0 || t >= tool(len(toolIndex)-1) {
+		return fmt.Sprintf("tool(%d)", t)
 	}
-	return toolName[toolIndex[i]:toolIndex[i+1]]
+	return toolName[toolIndex[t]:toolIndex[t+1]]
 }
 
 func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) error {
