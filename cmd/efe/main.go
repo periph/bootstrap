@@ -114,10 +114,10 @@ func getDefaultSDCard() string {
 
 func getSDCardHelp() string {
 	if len(sdCardsFound) == 0 {
-		return fmt.Sprintf("Path to SDCard; be sure to insert one first")
+		return "Path to SDCard; be sure to insert one first"
 	}
 	if len(sdCardsFound) == 1 {
-		return fmt.Sprintf("Path to SDCard")
+		return "Path to SDCard"
 	}
 	return fmt.Sprintf("Path to SDCard; one of %s", strings.Join(sdCardsFound, ","))
 }

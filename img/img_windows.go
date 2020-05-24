@@ -112,15 +112,15 @@ func flashWindows(imgPath, disk string) error {
 	var b [64 * 1024]byte
 	fmt.Printf("\n")
 	for o := int64(0); ; {
-		n, err := fi.Read(b[:])
-		if err == io.EOF {
+		n := 0
+		if n, err = fi.Read(b[:]); err == io.EOF {
 			break
 		}
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %v", imgPath, err)
 		}
-		nw, err := syscall.Write(fd, b[:n])
-		if err != nil {
+		nw := 0
+		if nw, err = syscall.Write(fd, b[:n]); err != nil {
 			return fmt.Errorf("failed to write %s: %v", disk, err)
 		}
 		if nw != n {

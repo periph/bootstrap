@@ -249,22 +249,22 @@ func mainImpl() error {
 	case "rsync":
 		// Do a quick version detect.
 		if t = detectRsync(); t == none {
-			return errors.New("Failed to detect rsync")
+			return errors.New("failed to detect rsync")
 		}
 	case "pscp":
 		if t = detectPscp(); t == none {
-			return errors.New("Failed to detect pscp")
+			return errors.New("failed to detect pscp")
 		}
 	case "scp":
 		if t = detectScp(); t == none {
-			return errors.New("Failed to detect scp")
+			return errors.New("failed to detect scp")
 		}
 	case "":
 		if t = detect(); t == none {
-			return errors.New("Please make sure at least one of rsync, scp or pscp is in PATH")
+			return errors.New("please make sure at least one of rsync, scp or pscp is in PATH")
 		}
 	default:
-		return fmt.Errorf("Unrecognized tool %q", *preferredTool)
+		return fmt.Errorf("unrecognized tool %q", *preferredTool)
 	}
 
 	// Simplify our life and just set it process wide.

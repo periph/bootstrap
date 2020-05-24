@@ -456,15 +456,15 @@ end:
 func fetchURL(url string) ([]byte, error) {
 	r, err := http.DefaultClient.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch %q: %v", url, err)
+		return nil, fmt.Errorf("failed to fetch %q: %v", url, err)
 	}
 	defer r.Body.Close()
 	if r.StatusCode != 200 {
-		return nil, fmt.Errorf("Failed to fetch %q: status %d", url, r.StatusCode)
+		return nil, fmt.Errorf("failed to fetch %q: status %d", url, r.StatusCode)
 	}
 	reply, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read %q: %v", url, err)
+		return nil, fmt.Errorf("failed to read %q: %v", url, err)
 	}
 	return reply, nil
 }

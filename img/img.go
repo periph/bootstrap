@@ -465,7 +465,7 @@ type diskutilInfo struct {
 	BusProtocol                                 string
 	CanBeMadeBootable                           bool
 	CanBeMadeBootableRequiresDestroy            bool
-	content                                     string
+	Content                                     string
 	DeviceBlockSize                             int64
 	DeviceIdentifier                            string
 	DeviceNode                                  string
