@@ -75,14 +75,14 @@ func flashWindows(imgPath, disk string) error {
 		// "Note that without a successful lock operation, a dismounted volume may
 		// be remounted by any process at any time"
 		if err = syscall.DeviceIoControl(fd, fsctlLockVolume, nil, 0, nil, 0, &dummy, nil); err != nil {
-			syscall.CloseHandle(fd)
+			_ = syscall.CloseHandle(fd)
 			return fmt.Errorf("failed to lock %s: %v", v, err)
 		}
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa364562.aspx
 		//   "It is important to lock the volume first, otherwise unpredictable
 		//   behavior may happen."
 		if err = syscall.DeviceIoControl(fd, fsctlDismountVolume, nil, 0, nil, 0, &dummy, nil); err != nil {
-			syscall.CloseHandle(fd)
+			_ = syscall.CloseHandle(fd)
 			return fmt.Errorf("failed to unmount %s: %v", v, err)
 		}
 		// TODO(maruel): In practice, it'd be nicer to just delete the volumes?
@@ -92,7 +92,7 @@ func flashWindows(imgPath, disk string) error {
 	defer func() {
 		// Closing the handle implicitly removes the lock.
 		for _, h := range handles {
-			syscall.CloseHandle(h)
+			_ = syscall.CloseHandle(h)
 		}
 	}()
 
@@ -103,7 +103,7 @@ func flashWindows(imgPath, disk string) error {
 	closed := false
 	defer func() {
 		if !closed {
-			syscall.CloseHandle(fd)
+			_ = syscall.CloseHandle(fd)
 		}
 	}()
 	// Use manual buffer instead of io.Copy() to control buffer size. 64Kb should
@@ -143,7 +143,7 @@ func flashWindows(imgPath, disk string) error {
 	// Closing the handle implicitly removes the lock. It is needed, otherwise
 	// the new volumes won't appear.
 	for _, h := range handles {
-		syscall.CloseHandle(h)
+		_ = syscall.CloseHandle(h)
 	}
 	handles = nil
 
@@ -237,7 +237,7 @@ func getVolumes() []string {
 		}
 		out = append(out, strings.TrimSuffix(syscall.UTF16ToString(v[:]), "\\"))
 	}
-	windows.FindVolumeClose(h)
+	_ = windows.FindVolumeClose(h)
 	return out
 }
 
@@ -270,7 +270,7 @@ func getVolumesForDisk(disk string, part int) []string {
 			continue
 		}
 		err = syscall.DeviceIoControl(fd, ioctlStorageGetDeviceNumber, nil, 0, &b[0], uint32(len(b)), &bytesRead, nil)
-		syscall.CloseHandle(fd)
+		_ = syscall.CloseHandle(fd)
 		if err != nil {
 			log.Println(v, len(b), err)
 			continue

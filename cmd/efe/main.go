@@ -134,7 +134,7 @@ func copyFile(dst, src string, mode os.FileMode) error {
 		return err
 	}
 	if _, err := io.Copy(fd, fs); err != nil {
-		fd.Close()
+		_ = fd.Close()
 		return err
 	}
 	return fd.Close()
@@ -315,7 +315,7 @@ func raspbianEnableUART(boot string) error {
 
 func mainImpl() error {
 	// Simplify our life on locale not in en_US.
-	os.Setenv("LANG", "C")
+	_ = os.Setenv("LANG", "C")
 	// TODO(maruel): Make it usable without root with:
 	//   sudo setcap CAP_SYS_ADMIN,CAP_DAC_OVERRIDE=ep __file__
 	flag.Parse()

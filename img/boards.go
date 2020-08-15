@@ -312,7 +312,7 @@ func fetchHardKernel() (string, error) {
 	}
 	if f, _ := os.Open(imgpath); f != nil {
 		fmt.Printf("- Reusing Ubuntu minimal image %s\n", imgpath)
-		f.Close()
+		_ = f.Close()
 		return imgpath, nil
 	}
 	imgurl := mirror + imgpath + ".xz"
@@ -330,7 +330,7 @@ func fetchRPiRaspbianLite() (string, error) {
 	}
 	if f, _ := os.Open(imgpath); f != nil {
 		fmt.Printf("- Reusing Raspbian Lite image %s\n", imgpath)
-		f.Close()
+		_ = f.Close()
 		return imgpath, nil
 	}
 	fmt.Printf("- Fetching %s\n", imgpath)
@@ -358,7 +358,7 @@ func fetchRPiRaspbianLite() (string, error) {
 				return "", err
 			}
 			if _, err = io.Copy(f, a); err != nil {
-				f.Close()
+				_ = f.Close()
 				return "", err
 			}
 			if err := f.Close(); err != nil {
@@ -382,7 +382,7 @@ func fetchRPiUbuntu() (string, error) {
 	}
 	if f, _ := os.Open(imgpath); f != nil {
 		fmt.Printf("- Reusing Ubuntu %s image %s\n", ver, imgpath)
-		f.Close()
+		_ = f.Close()
 		return imgpath, nil
 	}
 	imgurl := "http://cdimage.ubuntu.com/releases/" + ver + "/release/" + imgname + ".xz"
@@ -486,7 +486,7 @@ func fetchXZ(imgurl, imgpath string) error {
 	}
 	// Decompress as the file is being downloaded.
 	if _, err = io.Copy(f, r); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()

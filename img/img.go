@@ -99,7 +99,7 @@ func FindPublicKey() string {
 	for _, i := range []string{"authorized_keys", "id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
 		p := filepath.Join(home, ".ssh", i)
 		if f, _ := os.Open(p); f != nil {
-			f.Close()
+			_ = f.Close()
 			return p
 		}
 	}

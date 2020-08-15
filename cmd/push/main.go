@@ -268,9 +268,9 @@ func mainImpl() error {
 	}
 
 	// Simplify our life and just set it process wide.
-	os.Setenv("GOARCH", *goarch)
-	os.Setenv("GOARM", *goarm)
-	os.Setenv("GOOS", *goos)
+	_ = os.Setenv("GOARCH", *goarch)
+	_ = os.Setenv("GOARM", *goarm)
+	_ = os.Setenv("GOOS", *goos)
 	return push(*verbose, t, pkgs, *tags, *host, *rel)
 }
 
