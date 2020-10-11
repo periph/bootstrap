@@ -212,15 +212,10 @@ func Mount(disk string, n int) (string, error) {
 		}
 		mnt := fmt.Sprintf("%s%d", disk, n)
 		log.Printf("- Mounting %s", mnt)
-		// TODO(maruel): This assumes Ubuntu.
 		txt, _ := capture("", "/usr/bin/udisksctl", "mount", "-b", mnt)
-		if match := reMountLinux1.FindStringSubmatch(txt); len(match) != 0 {
-			log.Printf("  Mounted as %s", match[1])
-			return match[1], nil
-		}
-		if match := reMountLinux2.FindStringSubmatch(txt); len(match) != 0 {
-			log.Printf("  Mounted as %s", match[1])
-			return match[1], nil
+		if dst := udisksctlMount(txt); dst != "" {
+			log.Printf("  Mounted as %s", dst)
+			return dst, nil
 		}
 		return "", fmt.Errorf("failed to mount %q: %q", mnt, txt)
 	case "windows":
@@ -291,7 +286,12 @@ func getHome() string {
 func ddFlash(imgPath, dst string) error {
 	fmt.Printf("- Flashing (takes 2 minutes)\n")
 	// OSX uses 'M' but Ubuntu uses 'm' but using numbers works everywhere.
-	if err := run("sudo", "dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if="+imgPath, "of="+dst); err != nil {
+	args := []string{"dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if=" + imgPath, "of=" + dst, "oflag=direct"}
+	if runtime.GOOS != "darwin" {
+		// Not supported on macOS.
+		args = append(args, "status=progress")
+	}
+	if err := run("sudo", args...); err != nil {
 		return err
 	}
 	if runtime.GOOS != "darwin" {
@@ -313,12 +313,21 @@ func ddFlash(imgPath, dst string) error {
 // Linux
 
 var (
-	// "Mounted /dev/sdh2 at /media/<user>/<GUID>."
-	reMountLinux1 = regexp.MustCompile(`Mounted (?:[^ ]+) at ([^\\]+)\..*`)
-	// "Error mounting /dev/sdh2: GDBus.Error:org.freedesktop.UDisks2.Error.AlreadyMounted: Device /dev/sdh2"
-	// "is already mounted at `/media/<user>/<GUID>'.
-	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'`)
+	// Message printed by /usr/bin/udisksctl when a disk is mounted:
+	reMountLinux1 = regexp.MustCompile(`^Mounted (?:[^ ]+) at ([^.\n]+)\.?\n$`)
+	// Message printed by /usr/bin/udisksctl when a disk was already mounted:
+	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'$`)
 )
+
+func udisksctlMount(out string) string {
+	if m := reMountLinux1.FindStringSubmatch(out); len(m) != 0 {
+		return m[1]
+	}
+	if m := reMountLinux2.FindStringSubmatch(out); len(m) != 0 {
+		return m[1]
+	}
+	return ""
+}
 
 // boolOrString abstract the fact that on lsblk 2.31 some values are printed as
 // "0" or "1", but on 2.34 they are true or false.
