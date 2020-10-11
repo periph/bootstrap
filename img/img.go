@@ -212,7 +212,11 @@ func Mount(disk string, n int) (string, error) {
 		}
 		mnt := fmt.Sprintf("%s%d", disk, n)
 		log.Printf("- Mounting %s", mnt)
-		txt, _ := capture("", "/usr/bin/udisksctl", "mount", "-b", mnt)
+		const exe = "/usr/bin/udisksctl"
+		if _, err := os.Stat(exe); err != nil {
+			return "", errors.New("please install package udisks2 to get /usr/bin/udisksctl")
+		}
+		txt, _ := capture("", exe, "mount", "-b", mnt)
 		if dst := udisksctlMount(txt); dst != "" {
 			log.Printf("  Mounted as %s", dst)
 			return dst, nil
