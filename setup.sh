@@ -480,8 +480,6 @@ function do_unattended_upgrade {
     # Makes it a bit slower but safer; it will not corrupt itself if the host is
     # shutdown during installation.
     Unattended-Upgrade::MinimalSteps "true";
-    # Limit download speed to NN Kbps
-    Acquire::http::Dl-Limit "100";
     # apt-get autoclean every NN days.
     APT::Periodic::AutocleanInterval "21";
 EOF
