@@ -143,8 +143,8 @@ Fetches the library [periph.io](https://periph.io), then pushes all its tools to
 an host named `raspberrypi` all at once:
 
 ```
-go get -u -v -d periph.io/x/periph
-push -host pi@raspberrypi periph.io/x/periph/cmd/...
+go get -u -v -d periph.io/x/cmd
+push -host pi@raspberrypi periph.io/x/cmd/...
 ```
 
 Push two specific executables in the subdirectory of the current one:
@@ -157,7 +157,7 @@ Use a special GOARCH instead of the default (`arm`), for example when targeting
 a ARM64 host:
 
 ```
-push -host user@pine64 -goarch arm64 periph.io/x/periph/cmd/...
+push -host user@pine64 -goarch arm64 periph.io/x/cmd/...
 ```
 
 
