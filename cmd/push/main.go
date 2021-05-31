@@ -271,6 +271,17 @@ func mainImpl() error {
 	_ = os.Setenv("GOARCH", *goarch)
 	_ = os.Setenv("GOARM", *goarm)
 	_ = os.Setenv("GOOS", *goos)
+	if *goarch == "arm" && *goos == "linux" && os.Getenv("CC") == "" && os.Getenv("CGO_ENABLED") != "0" {
+		// If cross compiling gcc is installed, use it. Select the hardfloat
+		// version, since all Raspberry Pis have the VFP enabled.
+		// Set CGO_ENABLED=0 to disable this feature.
+		// Set CC to your desired compiled to override the one chosen by default.
+		if _, err := os.Stat("/usr/bin/arm-linux-gnueabihf-gcc"); err == nil {
+			fmt.Printf("- Using cross compiling gcc\n")
+			_ = os.Setenv("CC", "/usr/bin/arm-linux-gnueabihf-gcc")
+			_ = os.Setenv("CGO_ENABLED", "1")
+		}
+	}
 	return push(*verbose, t, pkgs, *tags, *host, *rel)
 }
 
