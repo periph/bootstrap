@@ -400,19 +400,22 @@ func fetchRPiUbuntu() (string, error) {
 func raspbianGetLatestImageURL() (string, string) {
 	// This is where https://downloads.raspberrypi.org/raspbian_lite_latest
 	// redirects to.
-	const baseImgURL = "https://downloads.raspberrypi.org/raspbian_lite/images/"
-	const dirFmt = "raspbian_lite-%s/"
-	re1 := regexp.MustCompile(`raspbian_lite-(20\d\d-\d\d-\d\d)/`)
-	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspbian-[[:alpha:]]+-lite\.zip)`)
+	// The final URL looks like:
+	// https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2021-05-28/2021-05-07-raspios-buster-armhf-lite.zip
+	const baseImgURL = "https://downloads.raspberrypi.org/raspios_lite_armhf/images/"
+	const dirFmt = "raspios_lite_armhf-%s/"
+	re1 := regexp.MustCompile(`raspios_lite_armhf-(20\d\d-\d\d-\d\d)/`)
+	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspios-[[:alpha:]]+-armhf-lite\.zip)`)
 	var matches [][][]byte
 	var match [][]byte
 
 	// Use a recent (as of now) default date, it's not a big deal if the image is
 	// a bit stale, it'll just take more time to "apt upgrade".
-	date := "2017-08-16"
-	distro := "stretch"
-	zipFile := date + "-raspbian-" + distro + "-lite.zip"
-	imgFile := date + "-raspbian-" + distro + "-lite.img"
+	date := "2021-05-28"
+	distro := "buster"
+	// It's a bit annoying as the image date and the directory date do not match.
+	zipFile := "2021-05-07" + "-raspios-" + distro + "-armhf-lite.zip"
+	imgFile := "2021-05-07" + "-raspios-" + distro + "-armhf-lite.img"
 
 	r, err := fetchURL(baseImgURL)
 	if err != nil {
@@ -429,6 +432,7 @@ func raspbianGetLatestImageURL() (string, string) {
 
 	// It's already in sorted order.
 	date = string(matches[len(matches)-1][1])
+	log.Printf("Found date %s", date)
 
 	// Find the distro name.
 	r, err = fetchURL(baseImgURL + fmt.Sprintf(dirFmt, date))
@@ -442,6 +446,7 @@ func raspbianGetLatestImageURL() (string, string) {
 		goto end
 	}
 	zipFile = string(match[1])
+	log.Printf("Found zipfile %s", zipFile)
 	imgFile = zipFile[:len(zipFile)-3] + "img"
 
 end:
