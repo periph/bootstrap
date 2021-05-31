@@ -69,21 +69,21 @@ func flashWindows(imgPath, disk string) error {
 		}
 		var fd syscall.Handle
 		if fd, err = syscall.CreateFile(r, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, 0, 0); err != nil {
-			return fmt.Errorf("failed to open %s: %v", v, err)
+			return fmt.Errorf("failed to open %s: %w", v, err)
 		}
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa364575.aspx
 		// "Note that without a successful lock operation, a dismounted volume may
 		// be remounted by any process at any time"
 		if err = syscall.DeviceIoControl(fd, fsctlLockVolume, nil, 0, nil, 0, &dummy, nil); err != nil {
 			_ = syscall.CloseHandle(fd)
-			return fmt.Errorf("failed to lock %s: %v", v, err)
+			return fmt.Errorf("failed to lock %s: %w", v, err)
 		}
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa364562.aspx
 		//   "It is important to lock the volume first, otherwise unpredictable
 		//   behavior may happen."
 		if err = syscall.DeviceIoControl(fd, fsctlDismountVolume, nil, 0, nil, 0, &dummy, nil); err != nil {
 			_ = syscall.CloseHandle(fd)
-			return fmt.Errorf("failed to unmount %s: %v", v, err)
+			return fmt.Errorf("failed to unmount %s: %w", v, err)
 		}
 		// TODO(maruel): In practice, it'd be nicer to just delete the volumes?
 		log.Println("locked volume", v)
@@ -117,11 +117,12 @@ func flashWindows(imgPath, disk string) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read %s: %v", imgPath, err)
+			return fmt.Errorf("failed to read %s: %w", imgPath, err)
 		}
 		nw := 0
 		if nw, err = syscall.Write(fd, b[:n]); err != nil {
-			return fmt.Errorf("failed to write %s: %v", disk, err)
+			// TODO(maruel): Find the drive letter(s) and call windows.DeleteVolumeMountPoint().
+			return fmt.Errorf("failed to write %s. It likely means you need to unmount the drive letter: %w", disk, err)
 		}
 		if nw != n {
 			return errors.New("buffer underflow")
@@ -134,7 +135,7 @@ func flashWindows(imgPath, disk string) error {
 	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa365192.aspx
 	err = syscall.DeviceIoControl(fd, ioctlDiskUpdateProperties, nil, 0, nil, 0, &dummy, nil)
 	if err != nil {
-		return fmt.Errorf("failed to refresh partition table on %s: %v", disk, err)
+		return fmt.Errorf("failed to refresh partition table on %s: %w", disk, err)
 	}
 	closed = true
 	if err := syscall.CloseHandle(fd); err != nil {
