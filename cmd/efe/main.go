@@ -55,9 +55,9 @@ enable_uart=1
 [all]
 `
 
-// raspberryPiWPASupplicant is a valid wpa_supplicant.conf file for Raspbian.
+// raspberryPiWPASupplicant is a valid wpa_supplicant.conf file for RaspiOS.
 //
-// On Raspbian with package raspberrypi-net-mods installed (it is installed by
+// On RaspiOS with package raspberrypi-net-mods installed (it is installed by
 // default on stretch lite), a file /boot/wpa_supplicant.conf will
 // automatically be copied to /etc/wpa_supplicant/.
 //
@@ -84,8 +84,8 @@ var (
 	wifiCountry  = flag.String("wifi-country", img.GetCountry(), "Country setting for Wifi; affect usable bands")
 	wifiSSID     = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass     = flag.String("wifi-pass", "", "wifi password")
-	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (Raspbian only)")
-	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (Raspbian only)")
+	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (RaspiOS only)")
+	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (RaspiOS only)")
 	sdCard       = flag.String("sdcard", getDefaultSDCard(), getSDCardHelp())
 	timeLocation = flag.String("time", img.GetTimeLocation(), "Location to use to define time")
 	postScript   = flag.String("post", "", "Command to run after setup is done")
@@ -237,9 +237,9 @@ func firstBootArgs() string {
 	if len(*sshKey) != 0 {
 		args += " -sk /boot/authorized_keys"
 	}
-	// For Raspbian, we can dump a /boot/wpa_supplicant.conf that will be picked
+	// For RaspiOS, we can dump a /boot/wpa_supplicant.conf that will be picked
 	// up automatically.
-	if image.Distro != img.Raspbian {
+	if image.Distro != img.RaspiOS {
 		args += " -wc " + *wifiCountry
 		if len(*wifiSSID) != 0 {
 			// TODO(maruel): Proper shell escaping.
@@ -282,9 +282,9 @@ func setupFirstBoot(boot string) error {
 			return err
 		}
 	}
-	// For Raspbian, we can dump a /boot/wpa_supplicant.conf that will be picked
+	// For RaspiOS, we can dump a /boot/wpa_supplicant.conf that will be picked
 	// up automatically.
-	if image.Distro == img.Raspbian && len(*wifiSSID) != 0 {
+	if (image.Distro == img.RaspiOS || image.Distro == img.RaspiOS64) && len(*wifiSSID) != 0 {
 		c := fmt.Sprintf(raspberryPiWPASupplicant, *wifiCountry, *wifiSSID, wpaPSK(*wifiPass, *wifiSSID))
 		if err := ioutil.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0644); err != nil {
 			return err
@@ -293,13 +293,13 @@ func setupFirstBoot(boot string) error {
 	return nil
 }
 
-// raspbianEnableUART enables console on UART on RPi3.
+// raspiosEnableUART enables console on UART on RPi3.
 //
 // This is only needed when debugging over serial, mainly to debug issues with
 // setup.sh.
 //
 // https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
-func raspbianEnableUART(boot string) error {
+func raspiosEnableUART(boot string) error {
 	fmt.Printf("- Enabling console on UART on RPi3\n")
 	f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
@@ -328,12 +328,12 @@ func mainImpl() error {
 	if err := image.Check(); err != nil {
 		return err
 	}
-	if image.Distro != img.Raspbian {
+	if image.Distro != img.RaspiOS && image.Distro != img.RaspiOS64 {
 		if *fiveInches {
-			return errors.New("-5inch only make sense with -distro raspbian")
+			return errors.New("-5inch only make sense with -distro raspios")
 		}
 		if *forceUART {
-			return errors.New("-forceuart only make sense with -distro raspbian")
+			return errors.New("-forceuart only make sense with -distro raspios")
 		}
 	}
 	if *sdCard == "" {
@@ -387,7 +387,7 @@ func mainImpl() error {
 		return err
 	}
 	if *forceUART {
-		if err = raspbianEnableUART(boot); err != nil {
+		if err = raspiosEnableUART(boot); err != nil {
 			return err
 		}
 	}

@@ -10,7 +10,7 @@
 `bootstrap` has the following properties:
 
 - works on **Windows**, **OSX** and Ubuntu.
-- supports: Raspberry Pi running Raspbian Lite, ODROID-C1
+- supports: Raspberry Pi running RaspiOS (32/64) Lite, ODROID-C1
   running Ubuntu headless, C.H.I.P. running Debian, BeagleBone running Debian.
 - exposes its flashing functionality as a Go library:
   [![GoDoc](https://godoc.org/periph.io/x/bootstrap/img?status.svg)](https://periph.io/x/bootstrap/img)
@@ -70,7 +70,7 @@ go get -u -v periph.io/x/bootstrap/cmd/...
 `efe` flashes a modified Operating System (e.g. linux) on a SDCard that will
 self-configure upon initial boot.
 
-- Fetches the latest OS image for the specified board, e.g. Raspbian Lite for
+- Fetches the latest OS image for the specified board, e.g. RaspiOS Lite for
   Raspberry Pi.
 - Makes a working copy, then modifies the EXT4 root partition to run
   [setup.sh](#setupsh) upon the first boot.
@@ -85,8 +85,8 @@ application. It is completely self-contained.
 
 ## Usage
 
-This example downloads the [latest Raspbian Stretch Lite image](
-https://www.raspberrypi.org/downloads/raspbian/) and flashes it to an SDCard
+This example downloads the [latest RaspiOS Lite image](
+https://www.raspberrypi.com/software/) and flashes it to an SDCard
 connected to the workstation. It setups the wifi and sends an email to you when
 it is done.
 
@@ -172,7 +172,7 @@ cross-compilable. Thankfully, [periph.io](https://periph.io) doesn't use cgo.
 
 ### Push failure
 
-First, make sure that `ssh` is enabled on your remote host. On Raspbian, this
+First, make sure that `ssh` is enabled on your remote host. On RaspiOS, this
 [requires a specific setup](
 https://www.raspberrypi.org/documentation/remote-access/ssh/).
 
@@ -326,7 +326,7 @@ https://github.com/periph/bootstrap/blob/master/setup.sh).
   - Makes GPIO and SPI usable without root.
 - `do_odroid`: For ODROID only:
   - Creates a user odroid:odroid.
-- `do_raspberrypi`: For Raspbian only:
+- `do_raspberrypi`: For RaspiOS only:
   - Disables Bluetooth.
   - Removes triggerhappy, installs ntpdate.
   - I²C, SPI and the camera ports are enabled.

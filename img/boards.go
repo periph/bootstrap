@@ -70,7 +70,7 @@ func (m *Manufacturer) boards() []Board {
 	case NextThingCo:
 		return []Board{CHIP, CHIPPro, PocketCHIP}
 	case Raspberry:
-		// All boards use the same images on Raspbian, so from our point of view,
+		// All boards use the same images on RaspiOS, so from our point of view,
 		// they are all the same.
 		// TODO(maruel): That's not true for Ubuntu, since they provide arm64
 		// images that only works on RPi3 and later.
@@ -89,8 +89,8 @@ func (m *Manufacturer) distros() []Distro {
 		// debian-headless
 		return []Distro{Debian}
 	case Raspberry:
-		// raspbian-lite
-		return []Distro{Raspbian, Ubuntu}
+		// raspios-lite
+		return []Distro{RaspiOS, RaspiOS64, Ubuntu}
 	default:
 		return nil
 	}
@@ -148,13 +148,17 @@ type Distro string
 const (
 	// Debian is https://www.debian.org/
 	Debian Distro = "debian"
-	// Raspbian is https://www.raspberrypi.org/downloads/raspbian/
-	Raspbian Distro = "raspbian"
+	// RaspiOS is Raspberry Pi OS Lite.
+	// See https://www.raspberrypi.com/software/operating-systems/
+	RaspiOS Distro = "raspios"
+	// RaspiOS64 is Raspberry Pi OS 64 Lite.
+	// See https://www.raspberrypi.com/software/operating-systems/
+	RaspiOS64 Distro = "raspios64"
 	// Ubuntu is https://ubuntu.com/
 	Ubuntu Distro = "ubuntu"
 )
 
-var distros = []Distro{Debian, Raspbian, Ubuntu}
+var distros = []Distro{Debian, RaspiOS, RaspiOS64, Ubuntu}
 
 func (d *Distro) String() string {
 	return string(*d)
@@ -249,16 +253,14 @@ func (i *Image) DefaultUser() string {
 	case NextThingCo:
 		return "odroid"
 	case Raspberry:
-		if i.Distro == Raspbian {
+		switch i.Distro {
+		case RaspiOS, RaspiOS64:
 			return "pi"
-		}
-		if i.Distro == Ubuntu {
+		case Ubuntu:
 			return "ubuntu"
 		}
-		return ""
-	default:
-		return ""
 	}
+	return ""
 }
 
 // DefaultHostname returns the default hostname as set by the image.
@@ -285,10 +287,12 @@ func (i *Image) Fetch() (string, error) {
 	case NextThingCo:
 		return "", errors.New("implement me")
 	case Raspberry:
-		if i.Distro == Raspbian {
-			return fetchRPiRaspbianLite()
-		}
-		if i.Distro == Ubuntu {
+		switch i.Distro {
+		case RaspiOS:
+			return fetchRPiRaspiOSLite(false)
+		case RaspiOS64:
+			return fetchRPiRaspiOSLite(true)
+		case Ubuntu:
 			return fetchRPiUbuntu()
 		}
 	}
@@ -322,14 +326,18 @@ func fetchHardKernel() (string, error) {
 	return imgpath, nil
 }
 
-func fetchRPiRaspbianLite() (string, error) {
-	imgurl, imgname := raspbianGetLatestImageURL()
+func fetchRPiRaspiOSLite(is64bits bool) (string, error) {
+	imgurl, imgname := raspiosGetLatestImageURL(is64bits)
 	imgpath, err := filepath.Abs(imgname)
 	if err != nil {
 		return "", err
 	}
 	if f, _ := os.Open(imgpath); f != nil {
-		fmt.Printf("- Reusing Raspbian Lite image %s\n", imgpath)
+		name := "RaspiOS"
+		if is64bits {
+			name += "64"
+		}
+		fmt.Printf("- Reusing %s Lite image %s\n", name, imgpath)
 		_ = f.Close()
 		return imgpath, nil
 	}
@@ -394,18 +402,21 @@ func fetchRPiUbuntu() (string, error) {
 
 //
 
-// raspbianGetLatestImageURL reads the image listing to find the latest one.
+// raspiosGetLatestImageURL reads the image listing to find the latest one.
 //
 // Getting the torrent would be nicer to the host.
-func raspbianGetLatestImageURL() (string, string) {
-	// This is where https://downloads.raspberrypi.org/raspbian_lite_latest
-	// redirects to.
+func raspiosGetLatestImageURL(is64bits bool) (string, string) {
 	// The final URL looks like:
 	// https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2021-05-28/2021-05-07-raspios-buster-armhf-lite.zip
-	const baseImgURL = "https://downloads.raspberrypi.org/raspios_lite_armhf/images/"
-	const dirFmt = "raspios_lite_armhf-%s/"
-	re1 := regexp.MustCompile(`raspios_lite_armhf-(20\d\d-\d\d-\d\d)/`)
-	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspios-[[:alpha:]]+-armhf-lite\.zip)`)
+	// https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2021-05-28/2021-05-07-raspios-buster-arm64-lite.zip
+	arch := "armhf"
+	if is64bits {
+		arch = "arm64"
+	}
+	baseImgURL := "https://downloads.raspberrypi.org/raspios_lite_" + arch + "/images/"
+	dirFmt := "raspios_lite_" + arch + "-%s/"
+	re1 := regexp.MustCompile(`raspios_lite_` + arch + `-(20\d\d-\d\d-\d\d)/`)
+	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspios-[[:alpha:]]+-` + arch + `-lite\.zip)`)
 	var matches [][][]byte
 	var match [][]byte
 
@@ -414,8 +425,8 @@ func raspbianGetLatestImageURL() (string, string) {
 	date := "2021-05-28"
 	distro := "buster"
 	// It's a bit annoying as the image date and the directory date do not match.
-	zipFile := "2021-05-07" + "-raspios-" + distro + "-armhf-lite.zip"
-	imgFile := "2021-05-07" + "-raspios-" + distro + "-armhf-lite.img"
+	zipFile := "2021-05-07" + "-raspios-" + distro + "-" + arch + "-lite.zip"
+	imgFile := "2021-05-07" + "-raspios-" + distro + "-" + arch + "-lite.img"
 
 	r, err := fetchURL(baseImgURL)
 	if err != nil {
@@ -451,10 +462,14 @@ func raspbianGetLatestImageURL() (string, string) {
 
 end:
 	url := baseImgURL + fmt.Sprintf(dirFmt, date) + zipFile
-	log.Printf("Raspbian date: %s", date)
-	log.Printf("Raspbian distro: %s", distro)
-	log.Printf("Raspbian URL: %s", url)
-	log.Printf("Raspbian file: %s", imgFile)
+	name := "RaspiOS"
+	if is64bits {
+		name += "64"
+	}
+	log.Printf("%s date: %s", name, date)
+	log.Printf("%s distro: %s", name, distro)
+	log.Printf("%s URL: %s", name, url)
+	log.Printf("%s file: %s", name, imgFile)
 	return url, imgFile
 }
 
