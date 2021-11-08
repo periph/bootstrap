@@ -193,18 +193,7 @@ EOF
   fi
 
   if [ $ACTION_5INCH -eq 1 ]; then
-    sudo_append_file /boot/config.txt << EOF
-      # Change made by https://github.com/periph/bootstrap
-      # Enable support for 800x480 display:
-      hdmi_group=2
-      hdmi_mode=87
-      hdmi_cvt 800 480 60 6 0 0 0
-      # Enable touchscreen:
-      # Not necessary on RaspiOS Lite since it boots in console mode. :)
-      # Some displays use 22, others 25.
-      # Enabling this means the SPI bus cannot be used anymore.
-      #dtoverlay=ads7846,penirq=22,penirq_pull=2,speed=10000,xohms=150
-EOF
+    do_5inch
   fi
 
   # Use the us keyboard layout.
@@ -227,6 +216,25 @@ EOF
     [pi0]
     dtoverlay=dwc2
     [all]
+EOF
+}
+
+
+function do_5inch {
+  echo "- do_5inch: Enable support for 800x480 5 inches HDMI touchscreen"
+  if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
+
+  sudo_append_file /boot/config.txt << EOF
+    # Change made by https://github.com/periph/bootstrap
+    # Enable support for 800x480 display:
+    hdmi_group=2
+    hdmi_mode=87
+    hdmi_cvt 800 480 60 6 0 0 0
+    # Enable touchscreen:
+    # Not necessary on RaspiOS Lite since it boots in console mode. :)
+    # Some displays use 22, others 25.
+    # Enabling this means the SPI bus cannot be used anymore.
+    #dtoverlay=ads7846,penirq=22,penirq_pull=2,speed=10000,xohms=150
 EOF
 }
 
@@ -762,7 +770,6 @@ function do_all {
   detect_user
 
   # TODO(maruel): Add new commands:
-  # - do_5inch
   # - enable_uart on RaspiOS
   if [ "$WIFI_SSID" != "" ]; then
     do_wifi
