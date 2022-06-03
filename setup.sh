@@ -417,7 +417,7 @@ function do_golang {
   fi
 
   # Magically figure out latest version for precompiled binaries.
-  local -r NEW_VERSION=$(curl -sS https://golang.org/VERSION?m=text)
+  local -r NEW_VERSION=$(curl -sS https://go.dev/VERSION?m=text)
   echo "  GO_ARCH=${GO_ARCH}  GO_OS_NAME=${GO_OS_NAME} VER=${NEW_VERSION}"
 
   local -r FILENAME="${NEW_VERSION}.${GO_OS_NAME}-${GO_ARCH}.tar.gz"
