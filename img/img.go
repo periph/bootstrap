@@ -84,6 +84,7 @@ func GetSetupSH() []byte {
 		p = append(p, filepath.Join(getHome(), "go", "src", "periph.io", "x", "bootstrap"))
 	}
 	for _, v := range p {
+		/* #nosec G304 */
 		b, err := ioutil.ReadFile(filepath.Join(v, "setup.sh"))
 		if err == nil && len(b) != 0 {
 			return b
@@ -98,6 +99,7 @@ func FindPublicKey() string {
 	home := getHome()
 	for _, i := range []string{"authorized_keys", "id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
 		p := filepath.Join(home, ".ssh", i)
+		/* #nosec G304 */
 		if f, _ := os.Open(p); f != nil {
 			_ = f.Close()
 			return p
@@ -561,6 +563,7 @@ func getMountedVolumesOSX() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	/* #nosec G307 */
 	defer f.Close()
 	all, err := f.Readdir(-1)
 	if err != nil {

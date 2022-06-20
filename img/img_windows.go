@@ -49,10 +49,12 @@ type storageDeviceNumber struct {
 func flashWindows(imgPath, disk string) error {
 	// TODO(maruel): It'd be worth opening with FILE_FLAG_SEQUENTIAL_SCAN but Go
 	// stdlib doesn't allow this.
+	/* #nosec G304 */
 	fi, err := os.Open(imgPath)
 	if err != nil {
 		return err
 	}
+	/* #nosec G307 */
 	defer fi.Close()
 	i, err := fi.Stat()
 	if err != nil {
@@ -277,6 +279,7 @@ func getVolumesForDisk(disk string, part int) []string {
 			continue
 		}
 		if bytesRead == l {
+			/* #nosec G103 */
 			s := (*storageDeviceNumber)(unsafe.Pointer(&b[0]))
 			if int(s.deviceNumber) == num {
 				if part == 0 || int(s.partitionNumber) == part {

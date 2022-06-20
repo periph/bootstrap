@@ -14,6 +14,7 @@ package main // import "periph.io/x/bootstrap/cmd/efe"
 
 import (
 	"bytes"
+	/* #nosec G505 */
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -124,11 +125,14 @@ func getSDCardHelp() string {
 
 // copyFile copies src from dst.
 func copyFile(dst, src string, mode os.FileMode) error {
+	/* #nosec G304 */
 	fs, err := os.Open(src)
 	if err != nil {
 		return err
 	}
+	/* #nosec G307 */
 	defer fs.Close()
+	/* #nosec G304 */
 	fd, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, mode)
 	if err != nil {
 		return err
@@ -144,7 +148,8 @@ func copyFile(dst, src string, mode os.FileMode) error {
 
 func modifyEXT4(img string) (bool, error) {
 	fmt.Printf("- Modifying image %s\n", img)
-	f, err := os.OpenFile(img, os.O_RDWR, 0666)
+	/* #nosec G304 */
+	f, err := os.OpenFile(img, os.O_RDWR, 0o600)
 	if err != nil {
 		return false, err
 	}
@@ -268,17 +273,18 @@ func wpaPSK(passphrase, ssid string) string {
 
 func setupFirstBoot(boot string) error {
 	fmt.Printf("- First boot setup script\n")
-	if err := ioutil.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0755); err != nil {
+	/* #nosec G306 */
+	if err := ioutil.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0o755); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
 		// This assumes you have properly set your own ssh keys and plan to use them.
-		if err := copyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0644); err != nil {
+		if err := copyFile(filepath.Join(boot, "authorized_keys"), *sshKey, 0o644); err != nil {
 			return err
 		}
 	}
 	if len(*postScript) != 0 {
-		if err := copyFile(filepath.Join(boot, filepath.Base(*postScript)), *postScript, 0755); err != nil {
+		if err := copyFile(filepath.Join(boot, filepath.Base(*postScript)), *postScript, 0o755); err != nil {
 			return err
 		}
 	}
@@ -286,7 +292,8 @@ func setupFirstBoot(boot string) error {
 	// up automatically.
 	if (image.Distro == img.RaspiOS || image.Distro == img.RaspiOS64) && len(*wifiSSID) != 0 {
 		c := fmt.Sprintf(raspberryPiWPASupplicant, *wifiCountry, *wifiSSID, wpaPSK(*wifiPass, *wifiSSID))
-		if err := ioutil.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0644); err != nil {
+		/* #nosec G306 */
+		if err := ioutil.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0o644); err != nil {
 			return err
 		}
 	}
@@ -301,7 +308,9 @@ func setupFirstBoot(boot string) error {
 // https://www.raspberrypi.org/forums/viewtopic.php?f=28&t=141195
 func raspiosEnableUART(boot string) error {
 	fmt.Printf("- Enabling console on UART on RPi3\n")
-	f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND|os.O_WRONLY, 0666)
+	/* #nosec G304 */
+	/* #nosec G302 */
+	f, err := os.OpenFile(filepath.Join(boot, "config.txt"), os.O_APPEND|os.O_WRONLY, 0o666)
 	if err != nil {
 		return err
 	}
@@ -349,7 +358,7 @@ func mainImpl() error {
 	}
 	e := filepath.Ext(imgpath)
 	imgmod := imgpath[:len(imgpath)-len(e)] + "-mod" + e
-	if err = copyFile(imgmod, imgpath, 0666); err != nil {
+	if err = copyFile(imgmod, imgpath, 0o666); err != nil {
 		return err
 	}
 	// TODO(maruel): Recent distros do not have a /etc/rc.local file.
