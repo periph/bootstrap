@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -63,9 +62,9 @@ enable_uart=1
 // automatically be copied to /etc/wpa_supplicant/.
 //
 // This has two advantages:
-// - wifi is enabled sooner in the boot process than when it's setup.sh that
-//   does it.
-// - the preshared key (passphrase) is stored in hashed form.
+//   - wifi is enabled sooner in the boot process than when it's setup.sh that
+//     does it.
+//   - the preshared key (passphrase) is stored in hashed form.
 const raspberryPiWPASupplicant = `country=%s
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
@@ -274,7 +273,7 @@ func wpaPSK(passphrase, ssid string) string {
 func setupFirstBoot(boot string) error {
 	fmt.Printf("- First boot setup script\n")
 	/* #nosec G306 */
-	if err := ioutil.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0o755); err != nil {
 		return err
 	}
 	if len(*sshKey) != 0 {
@@ -293,7 +292,7 @@ func setupFirstBoot(boot string) error {
 	if (image.Distro == img.RaspiOS || image.Distro == img.RaspiOS64) && len(*wifiSSID) != 0 {
 		c := fmt.Sprintf(raspberryPiWPASupplicant, *wifiCountry, *wifiSSID, wpaPSK(*wifiPass, *wifiSSID))
 		/* #nosec G306 */
-		if err := ioutil.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0o644); err != nil {
 			return err
 		}
 	}
@@ -329,7 +328,7 @@ func mainImpl() error {
 	//   sudo setcap CAP_SYS_ADMIN,CAP_DAC_OVERRIDE=ep __file__
 	flag.Parse()
 	if !*v {
-		log.SetOutput(ioutil.Discard)
+		log.SetOutput(io.Discard)
 	}
 	if (*wifiSSID != "") != (*wifiPass != "") {
 		return errors.New("use both --wifi-ssid and --wifi-pass")

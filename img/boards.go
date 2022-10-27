@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -487,7 +486,7 @@ func fetchURL(url string) ([]byte, error) {
 	if r.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to fetch %q: status %d", url, r.StatusCode)
 	}
-	reply, err := ioutil.ReadAll(r.Body)
+	reply, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %q: %w", url, err)
 	}

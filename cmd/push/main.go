@@ -10,7 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -214,7 +214,7 @@ func push(verbose bool, t tool, items []string, tags string, host, rel string) e
 		pkgs = append(pkgs, i...)
 	}
 
-	d, err := ioutil.TempDir("", "push")
+	d, err := os.MkdirTemp("", "push")
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func mainImpl() error {
 		pkgs = []string{"."}
 	}
 	if !*verbose {
-		log.SetOutput(ioutil.Discard)
+		log.SetOutput(io.Discard)
 	}
 
 	var t tool

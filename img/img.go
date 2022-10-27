@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -85,7 +84,7 @@ func GetSetupSH() []byte {
 	}
 	for _, v := range p {
 		/* #nosec G304 */
-		b, err := ioutil.ReadFile(filepath.Join(v, "setup.sh"))
+		b, err := os.ReadFile(filepath.Join(v, "setup.sh"))
 		if err == nil && len(b) != 0 {
 			return b
 		}
