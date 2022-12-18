@@ -5,8 +5,6 @@
 package img
 
 import (
-	"archive/zip"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -342,43 +340,10 @@ func fetchRPiRaspiOSLite(is64bits bool) (string, error) {
 		_ = f.Close()
 		return imgpath, nil
 	}
-	fmt.Printf("- Fetching %s\n", imgpath)
-	// Read the whole file in memory. This is less than 300Mb. Save to disk if
-	// it is too much for your system.
-	z, err := fetchURL(imgurl)
-	if err != nil {
+	if err := fetchXZ(imgurl, imgname); err != nil {
 		return "", err
 	}
-	// Because zip header is at the end of the file, extraction can only begin
-	// once the file is fully downloaded.
-	fmt.Printf("- Extracting zip\n")
-	r, err := zip.NewReader(bytes.NewReader(z), int64(len(z)))
-	if err != nil {
-		return "", err
-	}
-	for _, fi := range r.File {
-		if filepath.Base(fi.Name) == filepath.Base(imgpath) {
-			a, err := fi.Open()
-			if err != nil {
-				return "", err
-			}
-			/* #nosec G304 */
-			f, err := os.Create(imgpath)
-			if err != nil {
-				return "", err
-			}
-			/* #nosec G110 */
-			if _, err = io.Copy(f, a); err != nil {
-				_ = f.Close()
-				return "", err
-			}
-			if err := f.Close(); err != nil {
-				return "", err
-			}
-			return imgpath, nil
-		}
-	}
-	return "", errors.New("failed to find image in zip")
+	return imgname, nil
 }
 
 func fetchRPiUbuntu() (string, error) {
@@ -411,8 +376,7 @@ func fetchRPiUbuntu() (string, error) {
 // Getting the torrent would be nicer to the host.
 func raspiosGetLatestImageURL(is64bits bool) (string, string) {
 	// The final URL looks like:
-	// https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2021-05-28/2021-05-07-raspios-buster-armhf-lite.zip
-	// https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2021-05-28/2021-05-07-raspios-buster-arm64-lite.zip
+	// https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2022-09-26/2022-09-22-raspios-bullseye-armhf-lite.img.xz
 	arch := "armhf"
 	if is64bits {
 		arch = "arm64"
@@ -420,17 +384,18 @@ func raspiosGetLatestImageURL(is64bits bool) (string, string) {
 	baseImgURL := "https://downloads.raspberrypi.org/raspios_lite_" + arch + "/images/"
 	dirFmt := "raspios_lite_" + arch + "-%s/"
 	re1 := regexp.MustCompile(`raspios_lite_` + arch + `-(20\d\d-\d\d-\d\d)/`)
-	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspios-[[:alpha:]]+-` + arch + `-lite\.zip)`)
+	re2 := regexp.MustCompile(`(20\d\d-\d\d-\d\d-raspios-[[:alpha:]]+-` + arch + `-lite\.img\.xz)`)
 	var matches [][][]byte
 	var match [][]byte
 
 	// Use a recent (as of now) default date, it's not a big deal if the image is
 	// a bit stale, it'll just take more time to "apt upgrade".
-	date := "2021-05-28"
-	distro := "buster"
+	date := "2022-09-26"
+	// TODO(maruel): Figure out the distro automatically.
+	distro := "bullseye"
 	// It's a bit annoying as the image date and the directory date do not match.
-	zipFile := "2021-05-07" + "-raspios-" + distro + "-" + arch + "-lite.zip"
-	imgFile := "2021-05-07" + "-raspios-" + distro + "-" + arch + "-lite.img"
+	xzFile := "2022-09-22" + "-raspios-" + distro + "-" + arch + "-lite.img.xz"
+	imgFile := "2022-09-22" + "-raspios-" + distro + "-" + arch + "-lite.img"
 
 	r, err := fetchURL(baseImgURL)
 	if err != nil {
@@ -460,12 +425,12 @@ func raspiosGetLatestImageURL(is64bits bool) (string, string) {
 		log.Printf("failed to match: %q", r)
 		goto end
 	}
-	zipFile = string(match[1])
-	log.Printf("Found zipfile %s", zipFile)
-	imgFile = zipFile[:len(zipFile)-3] + "img"
+	xzFile = string(match[1])
+	log.Printf("Found xzfile %s", xzFile)
+	imgFile = xzFile[:len(xzFile)-3]
 
 end:
-	url := baseImgURL + fmt.Sprintf(dirFmt, date) + zipFile
+	url := baseImgURL + fmt.Sprintf(dirFmt, date) + xzFile
 	name := "RaspiOS"
 	if is64bits {
 		name += "64"
