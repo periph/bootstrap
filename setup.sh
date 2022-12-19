@@ -159,6 +159,7 @@ function do_raspios {
   echo "- do_raspios: RaspiOS specific changes"
   if [ $BANNER_ONLY -eq 1 ]; then return 0; fi
 
+  # https://www.raspberrypi.com/documentation/computers/configuration.html#setting-up-a-headless-raspberry-pi
   run sudo apt-get -y remove \
     'gcc-4*' 'gcc-5*' 'gcc-6*' 'gcc-7*' \
     libraspberrypi-doc \
@@ -216,6 +217,13 @@ EOF
     [pi0]
     dtoverlay=dwc2
     [all]
+EOF
+
+  # Now necessary on RaspiOS bullseye. We don't really need to keep the same
+  # password.
+  # https://www.raspberrypi.com/news/raspberry-pi-bullseye-update-april-2022/
+  sudo_append_file /boot/userconf.txt << EOF
+    pi:$(echo 'raspberry' | openssl passwd -6 -stdin)
 EOF
 }
 
