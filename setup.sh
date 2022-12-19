@@ -345,13 +345,23 @@ function do_ssh {
   if [ -f /home/$USERNAME/.ssh/authorized_keys ]; then
     # Only do if there's an authorized key!
     echo "  Disabling ssh password authentication support"
-    run sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    if [ -d /etc/ssh/sshd_config.d ]; then
+      # Debian 11/bullseye and Ubuntu 22.04 have a nicer way.
+      echo 'PasswordAuthentication no' | sudo_append_file /etc/ssh/sshd_config.d/no_password.conf
+    else
+      run sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    fi
   fi
 
   # Some distros (like O-DROID with Ubuntu minimal) enable ssh as root. This is
-  # not a good idea.
+  # not a good idea. Take no chance and always make sure it's disabled.
   echo "  Disable root ssh support"
-  run sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+  if [ -d /etc/ssh/sshd_config.d ]; then
+    # Debian 11/bullseye and Ubuntu 22.04 have a nicer way.
+    echo 'PermitRootLogin no' | sudo_append_file /etc/ssh/sshd_config.d/no_root.conf
+  else
+    run sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+  fi
 }
 
 
