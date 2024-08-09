@@ -272,8 +272,7 @@ func wpaPSK(passphrase, ssid string) string {
 
 func setupFirstBoot(boot string) error {
 	fmt.Printf("- First boot setup script\n")
-	/* #nosec G306 */
-	if err := os.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0o755); err != nil /* #nosec G306 */ {
 		return err
 	}
 	if len(*sshKey) != 0 {
@@ -291,8 +290,7 @@ func setupFirstBoot(boot string) error {
 	// up automatically.
 	if (image.Distro == img.RaspiOS || image.Distro == img.RaspiOS64) && len(*wifiSSID) != 0 {
 		c := fmt.Sprintf(raspberryPiWPASupplicant, *wifiCountry, *wifiSSID, wpaPSK(*wifiPass, *wifiSSID))
-		/* #nosec G306 */
-		if err := os.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(boot, "wpa_supplicant.conf"), []byte(c), 0o644); err != nil /* #nosec G306 */ {
 			return err
 		}
 	}

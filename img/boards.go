@@ -311,8 +311,7 @@ func fetchHardKernel() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	/* #nosec G304 */
-	if f, _ := os.Open(imgpath); f != nil {
+	if f, _ := os.Open(imgpath); f != nil /* #nosec G304 */ {
 		fmt.Printf("- Reusing Ubuntu minimal image %s\n", imgpath)
 		_ = f.Close()
 		return imgpath, nil
@@ -330,8 +329,7 @@ func fetchRPiRaspiOSLite(is64bits bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	/* #nosec G304 */
-	if f, _ := os.Open(imgpath); f != nil {
+	if f, _ := os.Open(imgpath); f != nil /* #nosec G304 */ {
 		name := "RaspiOS"
 		if is64bits {
 			name += "64"
@@ -356,8 +354,7 @@ func fetchRPiUbuntu() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	/* #nosec G304 */
-	if f, _ := os.Open(imgpath); f != nil {
+	if f, _ := os.Open(imgpath); f != nil /* #nosec G304 */ {
 		fmt.Printf("- Reusing Ubuntu %s image %s\n", ver, imgpath)
 		_ = f.Close()
 		return imgpath, nil

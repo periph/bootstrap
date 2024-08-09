@@ -98,8 +98,7 @@ func FindPublicKey() string {
 	home := getHome()
 	for _, i := range []string{"authorized_keys", "id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
 		p := filepath.Join(home, ".ssh", i)
-		/* #nosec G304 */
-		if f, _ := os.Open(p); f != nil {
+		if f, _ := os.Open(p); f != nil /* #nosec G304 */ {
 			_ = f.Close()
 			return p
 		}
