@@ -328,7 +328,7 @@ https://github.com/periph/bootstrap/blob/master/setup.sh).
   - Creates a user odroid:odroid.
 - `do_raspberrypi`: For RaspiOS only:
   - Disables Bluetooth.
-  - Removes triggerhappy, installs ntpdate.
+  - Removes triggerhappy and old GCC versions.
   - I²C, SPI and the camera ports are enabled.
   - Disables HDMI port to save ~40mA.
   - Keyboard layout is set to en_US.

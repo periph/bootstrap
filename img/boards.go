@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ulikunitz/xz"
@@ -347,9 +348,11 @@ func fetchRPiRaspiOSLite(is64bits bool) (string, error) {
 func fetchRPiUbuntu() (string, error) {
 	// https://ubuntu.com/download/raspberry-pi
 	// For now, if the user requests ubuntu, assume they want the 64 bits version.
-	// TODO(maruel): Do not hardcode the version.
-	ver := "20.04"
+	ver, subver := ubuntuGetLatestLTS()
 	imgname := "ubuntu-" + ver + "-preinstalled-server-arm64+raspi.img"
+	if subver != "" {
+		imgname = "ubuntu-" + ver + "." + subver + "-preinstalled-server-arm64+raspi.img"
+	}
 	imgpath, err := filepath.Abs(imgname)
 	if err != nil {
 		return "", err
@@ -359,11 +362,65 @@ func fetchRPiUbuntu() (string, error) {
 		_ = f.Close()
 		return imgpath, nil
 	}
-	imgurl := "http://cdimage.ubuntu.com/releases/" + ver + "/release/" + imgname + ".xz"
+	imgurl := "https://cdimage.ubuntu.com/releases/" + ver + "/release/" + imgname + ".xz"
 	if err := fetchXZ(imgurl, imgpath); err != nil {
 		return "", err
 	}
 	return imgpath, nil
+}
+
+// ubuntuGetLatestLTS returns the latest Ubuntu LTS version and optional point release.
+func ubuntuGetLatestLTS() (string, string) {
+	// Default to a known-good LTS if fetching fails.
+	ver := "24.04"
+	subver := ""
+	reVer := regexp.MustCompile(`(\d+\.\d+)/`)
+
+	b, err := fetchURL("https://cdimage.ubuntu.com/releases/")
+	if err != nil {
+		log.Printf("failed to fetch ubuntu releases: %v", err)
+		return ver, subver
+	}
+	matches := reVer.FindAllSubmatch(b, -1)
+	var lts []string
+	for _, m := range matches {
+		v := string(m[1])
+		// LTS versions: even year April releases (xx.04).
+		parts := strings.Split(v, ".")
+		if len(parts) == 2 && parts[1] == "04" {
+			lts = append(lts, v)
+		}
+	}
+	if len(lts) == 0 {
+		return ver, subver
+	}
+	sort.Strings(lts)
+	ver = lts[len(lts)-1]
+
+	// Find the latest point release for this LTS.
+	subre := regexp.MustCompile(`ubuntu-` + regexp.QuoteMeta(ver) + `(\.(\d+))?-preinstalled-server-arm64\+raspi\.img\.xz`)
+	b, err = fetchURL("https://cdimage.ubuntu.com/releases/" + ver + "/release/")
+	if err != nil {
+		log.Printf("failed to fetch ubuntu %s release: %v", ver, err)
+		return ver, subver
+	}
+	// Find the highest point release, or empty if base image exists.
+	pm := subre.FindAllSubmatch(b, -1)
+	var points []int
+	for _, m := range pm {
+		if len(m[2]) == 0 {
+			// Base image without point release exists.
+			return ver, ""
+		}
+		if n, err := strconv.Atoi(string(m[2])); err == nil {
+			points = append(points, n)
+		}
+	}
+	if len(points) > 0 {
+		sort.Ints(points)
+		subver = strconv.Itoa(points[len(points)-1])
+	}
+	return ver, subver
 }
 
 //
@@ -387,12 +444,12 @@ func raspiosGetLatestImageURL(is64bits bool) (string, string) {
 
 	// Use a recent (as of now) default date, it's not a big deal if the image is
 	// a bit stale, it'll just take more time to "apt upgrade".
-	date := "2022-09-26"
+	date := "2026-04-21"
 	// TODO(maruel): Figure out the distro automatically.
-	distro := "bullseye"
+	distro := "trixie"
 	// It's a bit annoying as the image date and the directory date do not match.
-	xzFile := "2022-09-22" + "-raspios-" + distro + "-" + arch + "-lite.img.xz"
-	imgFile := "2022-09-22" + "-raspios-" + distro + "-" + arch + "-lite.img"
+	xzFile := "2026-04-21" + "-raspios-" + distro + "-" + arch + "-lite.img.xz"
+	imgFile := "2026-04-21" + "-raspios-" + distro + "-" + arch + "-lite.img"
 
 	r, err := fetchURL(baseImgURL)
 	if err != nil {
