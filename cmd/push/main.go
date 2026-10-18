@@ -169,7 +169,7 @@ func detect() tool {
 
 // toPkg returns one or multiple packages matching the relpath.
 func toPkg(item string) ([]string, error) {
-	out, err := exec.Command("go", "list", item).CombinedOutput()
+	out, err := exec.Command("go", "list", "--", item).CombinedOutput()
 	s := strings.TrimSpace(string(out))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list package %q: %v\n%s", item, err, s)

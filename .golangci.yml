@@ -1,0 +1,53 @@
+# Copyright 2026 Marc-Antoine Ruel. All rights reserved.
+# Use of this source code is governed under the Apache License, Version 2.0
+# that can be found in the LICENSE file.
+
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: none
+  enable:
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+  exclusions:
+    rules:
+      # These local administration commands select the programs themselves and
+      # pass CLI operands as separate argv entries, never through a shell.
+      - path: ^(cmd/(efe|push)/main|img/img)\.go$
+        linters: [gosec]
+        text: '^G(204|702):'
+        source: 'exec.Command\((name|"fdisk"|"go"),'
+      # rc.local is a credential-bearing executable launched only by root.
+      - path: ^cmd/efe/main\.go$
+        linters: [gosec]
+        text: '^G302:'
+        source: 'os.Chmod\(p, 0o700\)'
+      # setup.sh has a fixed name; search roots are this user's cwd/GOPATH.
+      - path: ^img/img\.go$
+        linters: [gosec]
+        text: '^G703:'
+        source: 'os.ReadFile\(filepath.Join\(v, "setup.sh"\)\)'
+      # The standalone gosec CI command scanned production sources only.
+      - path: _test\.go$
+        linters: [gosec]
+  settings:
+    staticcheck:
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022", "-QF*"]
+    govet:
+      enable:
+        - shadow
+      disable:
+        - unsafeptr
+        # Newer stdlib inlining suggestions cannot target the minimum Go version.
+        - inline
+formatters:
+  exclusions:
+    generated: lax
+  enable:
+    - gofmt
+    - goimports

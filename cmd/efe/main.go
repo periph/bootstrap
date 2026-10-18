@@ -198,7 +198,7 @@ type ext4Part struct {
 // getEXT4Partition returns the offset (in bytes) and size of the first Linux
 // (type 83) partition in a disk image, using fdisk.
 func getEXT4Partition(imgPath string) (ext4Part, error) {
-	out, err := exec.Command("fdisk", "-l", imgPath).Output()
+	out, err := exec.Command("fdisk", "-l", "--", imgPath).Output()
 	if err != nil {
 		return ext4Part{}, fmt.Errorf("fdisk: %w", err)
 	}
@@ -221,7 +221,7 @@ func getEXT4Partition(imgPath string) (ext4Part, error) {
 
 // modifyRootFS mounts the image's EXT4 partition via loopback and writes
 // /etc/rc.local so that systemd runs firstboot.sh on boot.
-func modifyRootFS(imgPath string) error {
+func modifyRootFS(imgPath string) (retErr error) {
 	ext4, err := getEXT4Partition(imgPath)
 	if err != nil {
 		return fmt.Errorf("cannot find EXT4 partition: %w", err)
@@ -230,14 +230,14 @@ func modifyRootFS(imgPath string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(mnt)
+	defer func() { retErr = errors.Join(retErr, os.Remove(mnt)) }()
 
 	fmt.Printf("- Mounting EXT4 partition (offset %d) at %s\n", ext4.offset, mnt)
 	if err := run("sudo", "mount", "-o", fmt.Sprintf("loop,offset=%d,rw", ext4.offset), imgPath, mnt); err != nil {
 		return fmt.Errorf("mount EXT4: %w", err)
 	}
 	defer func() {
-		run("sudo", "umount", mnt)
+		retErr = errors.Join(retErr, run("sudo", "umount", mnt))
 	}()
 
 	// Build rc.local. Kept dense to fit within the 512-byte block if the
@@ -250,11 +250,16 @@ func modifyRootFS(imgPath string) error {
 
 	p := filepath.Join(mnt, "etc", "rc.local")
 	fmt.Printf("- Writing %s\n", p)
-	if err := os.WriteFile(p, []byte(rc), 0o755); err != nil {
+	if err := os.WriteFile(p, []byte(rc), 0o600); err != nil {
 		return fmt.Errorf("write rc.local: %w", err)
 	}
+	if err := os.Chmod(p, 0o700); err != nil {
+		return fmt.Errorf("make rc.local executable: %w", err)
+	}
 	return nil
-}// raspiOSNetworkConfig is a cloud-init netplan v2 config for WiFi.
+}
+
+// raspiOSNetworkConfig is a cloud-init netplan v2 config for WiFi.
 const raspiOSNetworkConfig = `network:
   version: 2
   wifis:
@@ -267,7 +272,25 @@ const raspiOSNetworkConfig = `network:
           password: "%s"
 `
 
-
+// writeBootData replaces credential-bearing boot data with a private file,
+// including when an image supplied an existing world-readable template.
+func writeBootData(path string, data []byte) (retErr error) {
+	f, err := os.CreateTemp(filepath.Dir(path), ".efe-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
+			retErr = errors.Join(retErr, err)
+		}
+	}()
+	_, writeErr := f.Write(data)
+	if err := errors.Join(writeErr, f.Close()); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
 
 func setupFirstBoot(boot string) error {
 	fmt.Printf("- First boot setup script\n")
@@ -286,22 +309,22 @@ func setupFirstBoot(boot string) error {
 	}
 	if image.Distro == img.RaspiOS || image.Distro == img.RaspiOS64 {
 		// Cloud-init runcmd as a safety net alongside rc.local.
-		if err := os.WriteFile(filepath.Join(boot, "user-data"), cloudInitUserData(), 0o644); err != nil {
+		if err := writeBootData(filepath.Join(boot, "user-data"), cloudInitUserData()); err != nil {
 			return err
 		}
 		// Legacy files for raspberrypi-sys-mods.
-		if err := os.WriteFile(filepath.Join(boot, "ssh"), nil, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(boot, "ssh"), nil, 0o600); err != nil {
 			return err
 		}
 		if uc := raspiOSUserConf("pi", "raspberry"); uc != "" {
-			if err := os.WriteFile(filepath.Join(boot, "userconf.txt"), []byte(uc), 0o644); err != nil {
+			if err := writeBootData(filepath.Join(boot, "userconf.txt"), []byte(uc)); err != nil {
 				return err
 			}
 		}
 		// nmconnection for setup.sh's do_nmconnection to copy into place.
 		if len(*wifiSSID) != 0 {
 			nm := fmt.Sprintf(raspiOSNMConnection, *wifiSSID, *wifiSSID, *wifiPass)
-			if err := os.WriteFile(filepath.Join(boot, *wifiSSID+".nmconnection"), []byte(nm), 0o600); err != nil {
+			if err := writeBootData(filepath.Join(boot, *wifiSSID+".nmconnection"), []byte(nm)); err != nil {
 				return err
 			}
 		}
@@ -309,7 +332,7 @@ func setupFirstBoot(boot string) error {
 		// Cloud-init network-config gives early WiFi before runcmd fires.
 		if len(*wifiSSID) != 0 {
 			nc := fmt.Sprintf(raspiOSNetworkConfig, *wifiCountry, *wifiSSID, *wifiPass)
-			if err := os.WriteFile(filepath.Join(boot, "network-config"), []byte(nc), 0o644); err != nil {
+			if err := writeBootData(filepath.Join(boot, "network-config"), []byte(nc)); err != nil {
 				return err
 			}
 		}
@@ -379,7 +402,7 @@ func mainImpl() error {
 	}
 
 	// Mount the EXT4 partition via loopback, write rc.local.
-	if err := modifyRootFS(imgPath); err != nil {
+	if err = modifyRootFS(imgPath); err != nil {
 		return fmt.Errorf("failed to modify root filesystem: %w\nYou will have to ssh in and run:\n  /boot/firstboot.sh %s", err, shellJoin(firstBootArgs()))
 	}
 
