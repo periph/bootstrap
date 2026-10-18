@@ -2,6 +2,8 @@
 // Use of this source code is governed under the Apache License, Version 2.0
 // that can be found in the LICENSE file.
 
+// Windows disk discovery, raw image flashing, and partition mounting.
+
 package img
 
 import (
