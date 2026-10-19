@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -259,7 +258,7 @@ func getVolumesForDisk(disk string, part int) []string {
 	}
 	var out []string
 	var bytesRead uint32
-	l := uint32(reflect.TypeOf((*storageDeviceNumber)(nil)).Elem().Size())
+	const l = uint32(unsafe.Sizeof(storageDeviceNumber{}))
 	var b [32]byte
 	for _, v := range getVolumes() {
 		r, err := syscall.UTF16PtrFromString(v)
