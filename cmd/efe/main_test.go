@@ -33,7 +33,7 @@ func TestModifyRootFS(t *testing.T) {
 	old := *wifiPass
 	*wifiPass = "test-password"
 	t.Cleanup(func() { *wifiPass = old })
-	err := modifyRootFS("test.img")
+	err := modifyRootFS(t.Context(), "test.img")
 	if err == nil || !strings.Contains(err.Error(), "exit status 42") {
 		t.Fatalf("unmount failure = %v", err)
 	}
@@ -68,7 +68,7 @@ func TestSetupFirstBoot(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := setupFirstBoot(boot); err != nil {
+	if err := setupFirstBoot(t.Context(), boot); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)

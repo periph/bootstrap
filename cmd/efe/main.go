@@ -10,9 +10,10 @@
 //
 // The EXT4 partition is mounted via loopback to write /etc/rc.local, which
 // systemd's rc-local.service picks up on first boot.
-package main // import "periph.io/x/bootstrap/cmd/efe"
+package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,10 +21,12 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"periph.io/x/bootstrap/img"
 )
@@ -60,18 +63,18 @@ var (
 	image        img.Image
 	sshKey       = flag.String("ssh-key", img.FindPublicKey(), "ssh public key to use")
 	email        = flag.String("email", "", "email address to forward root@localhost to")
-	wifiCountry  = flag.String("wifi-country", img.GetCountry(), "Country setting for Wifi; affect usable bands")
+	wifiCountry  = flag.String("wifi-country", "", "Country setting for Wifi; affect usable bands")
 	wifiSSID     = flag.String("wifi-ssid", "", "wifi ssid")
 	wifiPass     = flag.String("wifi-pass", "", "wifi password")
 	fiveInches   = flag.Bool("5inch", false, "Enable support for 5\" 800x480 display (RaspiOS only)")
 	forceUART    = flag.Bool("forceuart", false, "Enable console UART support (RaspiOS only)")
 	sdCard       = flag.String("sdcard", getDefaultSDCard(), getSDCardHelp())
-	timeLocation = flag.String("time", img.GetTimeLocation(), "Location to use to define time")
+	timeLocation = flag.String("time", "", "Location to use to define time")
 	postScript   = flag.String("post", "", "Command to run after setup is done")
 	v            = flag.Bool("v", false, "log verbosely")
 )
 
-var sdCardsFound = img.ListSDCards()
+var sdCardsFound []string
 
 func init() {
 	flag.Var(&image.Manufacturer, "manufacturer", img.ManufacturerHelp())
@@ -81,17 +84,17 @@ func init() {
 
 // --- helpers ---
 
-func run(name string, args ...string) error {
-	log.Printf("run(%s %s)", name, strings.Join(args, " "))
-	cmd := exec.Command(name, args...)
+func run(ctx context.Context, name string, args ...string) error {
+	log.Printf("run(ctx, %s %s)", name, strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-func raspiOSUserConf(username, password string) string {
-	c := exec.Command("openssl", "passwd", "-6", "-stdin")
+func raspiOSUserConf(ctx context.Context, username, password string) string {
+	c := exec.CommandContext(ctx, "openssl", "passwd", "-6", "-stdin")
 	c.Stdin = strings.NewReader(password)
 	out, err := c.Output()
 	if err != nil {
@@ -115,17 +118,17 @@ func getSDCardHelp() string {
 	if len(sdCardsFound) == 1 {
 		return "Path to SDCard"
 	}
-	return fmt.Sprintf("Path to SDCard; one of %s", strings.Join(sdCardsFound, ","))
+	return "Path to SDCard; one of " + strings.Join(sdCardsFound, ",")
 }
 
-func copyFile(dst, src string, mode os.FileMode) error {
+func copyFile(dst, src string, mode os.FileMode) (retErr error) {
 	/* #nosec G304 */
 	fs, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	/* #nosec G307 */
-	defer fs.Close()
+	defer func() { retErr = errors.Join(retErr, fs.Close()) }()
 	/* #nosec G304 */
 	fd, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, mode)
 	if err != nil {
@@ -197,12 +200,12 @@ type ext4Part struct {
 
 // getEXT4Partition returns the offset (in bytes) and size of the first Linux
 // (type 83) partition in a disk image, using fdisk.
-func getEXT4Partition(imgPath string) (ext4Part, error) {
-	out, err := exec.Command("fdisk", "-l", "--", imgPath).Output()
+func getEXT4Partition(ctx context.Context, imgPath string) (ext4Part, error) {
+	out, err := exec.CommandContext(ctx, "fdisk", "-l", "--", imgPath).Output()
 	if err != nil {
 		return ext4Part{}, fmt.Errorf("fdisk: %w", err)
 	}
-	for _, l := range strings.Split(string(out), "\n") {
+	for l := range strings.SplitSeq(string(out), "\n") {
 		fields := strings.Fields(l)
 		if len(fields) >= 5 && fields[4] == "83" {
 			start, err := strconv.ParseInt(fields[1], 10, 64)
@@ -221,8 +224,8 @@ func getEXT4Partition(imgPath string) (ext4Part, error) {
 
 // modifyRootFS mounts the image's EXT4 partition via loopback and writes
 // /etc/rc.local so that systemd runs firstboot.sh on boot.
-func modifyRootFS(imgPath string) (retErr error) {
-	ext4, err := getEXT4Partition(imgPath)
+func modifyRootFS(ctx context.Context, imgPath string) (retErr error) {
+	ext4, err := getEXT4Partition(ctx, imgPath)
 	if err != nil {
 		return fmt.Errorf("cannot find EXT4 partition: %w", err)
 	}
@@ -233,19 +236,22 @@ func modifyRootFS(imgPath string) (retErr error) {
 	defer func() { retErr = errors.Join(retErr, os.Remove(mnt)) }()
 
 	fmt.Printf("- Mounting EXT4 partition (offset %d) at %s\n", ext4.offset, mnt)
-	if err := run("sudo", "mount", "-o", fmt.Sprintf("loop,offset=%d,rw", ext4.offset), imgPath, mnt); err != nil {
+	if err := run(ctx, "sudo", "mount", "-o", fmt.Sprintf("loop,offset=%d,rw", ext4.offset), imgPath, mnt); err != nil {
 		return fmt.Errorf("mount EXT4: %w", err)
 	}
 	defer func() {
-		retErr = errors.Join(retErr, run("sudo", "umount", mnt))
+		retErr = errors.Join(retErr, run(context.WithoutCancel(ctx), "sudo", "umount", mnt))
 	}()
 
 	// Build rc.local. Kept dense to fit within the 512-byte block if the
 	// original rc.local was ever present; harmless otherwise.
 	rc := "#!/bin/sh -e\nL=/var/log/firstboot.log\nif [ ! -f $L ];then /boot/firmware/firstboot.sh"
+	var rcArgs strings.Builder
 	for _, a := range firstBootArgs() {
-		rc += " " + shellQuote(a)
+		rcArgs.WriteByte(' ')
+		rcArgs.WriteString(shellQuote(a))
 	}
+	rc += rcArgs.String()
 	rc += " 2>&1|tee $L;fi\nexit 0\n"
 
 	p := filepath.Join(mnt, "etc", "rc.local")
@@ -292,9 +298,13 @@ func writeBootData(path string, data []byte) (retErr error) {
 	return os.Rename(tmp, path)
 }
 
-func setupFirstBoot(boot string) error {
+func setupFirstBoot(ctx context.Context, boot string) error {
 	fmt.Printf("- First boot setup script\n")
-	if err := os.WriteFile(filepath.Join(boot, "firstboot.sh"), img.GetSetupSH(), 0o755); err != nil /* #nosec G306 */ {
+	setup := img.GetSetupSH(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(boot, "firstboot.sh"), setup, 0o755); err != nil /* #nosec G306 */ {
 		return err
 	}
 	if len(*sshKey) != 0 {
@@ -316,7 +326,7 @@ func setupFirstBoot(boot string) error {
 		if err := os.WriteFile(filepath.Join(boot, "ssh"), nil, 0o600); err != nil {
 			return err
 		}
-		if uc := raspiOSUserConf("pi", "raspberry"); uc != "" {
+		if uc := raspiOSUserConf(ctx, "pi", "raspberry"); uc != "" {
 			if err := writeBootData(filepath.Join(boot, "userconf.txt"), []byte(uc)); err != nil {
 				return err
 			}
@@ -369,8 +379,19 @@ func cloudInitUserData() []byte {
 
 // --- main ---
 
-func mainImpl() error {
+func mainImpl(ctx context.Context) (retErr error) {
 	_ = os.Setenv("LANG", "C")
+	sdCardsFound = img.ListSDCards(ctx)
+	*sdCard = getDefaultSDCard()
+	*wifiCountry = img.GetCountry(ctx)
+	*timeLocation = img.GetTimeLocation(ctx)
+	flag.Lookup("sdcard").DefValue = *sdCard
+	flag.Lookup("sdcard").Usage = getSDCardHelp()
+	flag.Lookup("wifi-country").DefValue = *wifiCountry
+	flag.Lookup("time").DefValue = *timeLocation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	flag.Parse()
 	if !*v {
 		log.SetOutput(io.Discard)
@@ -396,13 +417,13 @@ func mainImpl() error {
 	if *wifiSSID == "" {
 		fmt.Println("Wifi will not be configured!")
 	}
-	imgPath, err := image.Fetch()
+	imgPath, err := image.Fetch(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Mount the EXT4 partition via loopback, write rc.local.
-	if err = modifyRootFS(imgPath); err != nil {
+	if err = modifyRootFS(ctx, imgPath); err != nil {
 		return fmt.Errorf("failed to modify root filesystem: %w\nYou will have to ssh in and run:\n  /boot/firstboot.sh %s", err, shellJoin(firstBootArgs()))
 	}
 
@@ -410,23 +431,29 @@ func mainImpl() error {
 	if runtime.GOOS != "windows" {
 		fmt.Printf("This script has minimal use of 'sudo' for 'dd' to format the SDCard\n\n")
 	}
-	if err = img.Flash(imgPath, *sdCard); err != nil {
+	if err = img.Flash(ctx, imgPath, *sdCard); err != nil {
 		return err
 	}
 
-	if err = img.Umount(*sdCard); err != nil {
+	if err = img.Umount(ctx, *sdCard); err != nil {
 		return err
 	}
-	boot, err := img.Mount(*sdCard, 1)
+	boot, err := img.Mount(ctx, *sdCard, 1)
 	if err != nil {
 		return err
 	}
 	if boot == "" {
 		return errors.New("failed to mount /boot")
 	}
+	mounted := true
+	defer func() {
+		if mounted {
+			retErr = errors.Join(retErr, img.Umount(context.WithoutCancel(ctx), *sdCard))
+		}
+	}()
 	log.Printf("  /boot mounted as %s\n", boot)
 
-	if err = setupFirstBoot(boot); err != nil {
+	if err = setupFirstBoot(ctx, boot); err != nil {
 		return err
 	}
 	if *forceUART {
@@ -434,7 +461,8 @@ func mainImpl() error {
 			return err
 		}
 	}
-	if err = img.Umount(*sdCard); err != nil {
+	mounted = false
+	if err = img.Umount(context.WithoutCancel(ctx), *sdCard); err != nil {
 		return err
 	}
 
@@ -450,7 +478,10 @@ func mainImpl() error {
 }
 
 func main() {
-	if err := mainImpl(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := mainImpl(ctx)
+	stop()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nefe: %s.\n", err)
 		os.Exit(1)
 	}

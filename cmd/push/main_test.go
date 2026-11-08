@@ -9,6 +9,7 @@ package main
 import "testing"
 
 func TestString(t *testing.T) {
+	t.Parallel()
 	if s := none.String(); s != "none" {
 		t.Fatal(s)
 	}

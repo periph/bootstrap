@@ -5,22 +5,23 @@
 // Unavailable Windows disk operations on other operating systems.
 
 //go:build !windows
-// +build !windows
 
 package img
 
-func flashWindows(imgPath, disk string) error {
+import "context"
+
+func flashWindows(_ context.Context, _, _ string) error {
 	return nil
 }
 
-func mountWindows(disk string, n int) (string, error) {
+func mountWindows(_ string, _ int) (string, error) {
 	return "", nil
 }
 
-func umountWindows(disk string) error {
+func umountWindows(_ string) error {
 	return nil
 }
 
-func listSDCardsWindows() []string {
+func listSDCardsWindows(_ context.Context) []string {
 	return nil
 }

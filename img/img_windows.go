@@ -7,6 +7,7 @@
 package img
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -47,7 +48,7 @@ type storageDeviceNumber struct {
 // token.
 //
 // 'disk' is expected to be of format "\\\\.\\physicaldriveN"
-func flashWindows(imgPath, disk string) error {
+func flashWindows(ctx context.Context, imgPath, disk string) error {
 	// TODO(maruel): It'd be worth opening with FILE_FLAG_SEQUENTIAL_SCAN but Go
 	// stdlib doesn't allow this.
 	/* #nosec G304 */
@@ -115,6 +116,9 @@ func flashWindows(imgPath, disk string) error {
 	var b [64 * 1024]byte
 	fmt.Printf("\n")
 	for o := int64(0); ; {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		n := 0
 		if n, err = fi.Read(b[:]); err == io.EOF {
 			break
@@ -157,7 +161,9 @@ func flashWindows(imgPath, disk string) error {
 		if _, err := mountWindows(disk, 1); err == nil {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		if err := wait(ctx, 100*time.Millisecond); err != nil {
+			return err
+		}
 	}
 	// Still return nil, but mountWindows() will likely fail.
 	return nil
@@ -186,13 +192,13 @@ func umountWindows(disk string) error {
 	return nil
 }
 
-func listSDCardsWindows() []string {
+func listSDCardsWindows(ctx context.Context) []string {
 	var out []string
 	// TODO(maruel): Do it directly instead of shelling out. A dumb loop over
 	// "\\\\.\\physicaldriveN" from 0 to 50 would probably do it and would be
 	// fast enough, at least faster than the current code.
 	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa394132.aspx
-	for _, disk := range wmicList("diskdrive", "get", "medialoaded,mediatype,deviceid") {
+	for _, disk := range wmicList(ctx, "diskdrive", "get", "medialoaded,mediatype,deviceid") {
 		// Some USB devices report as fixed media, but we do not care since we
 		// target only SDCards.
 		if disk["MediaLoaded"] == "TRUE" && disk["MediaType"] == "Removable Media" {
@@ -295,7 +301,7 @@ func getVolumesForDisk(disk string, part int) []string {
 }
 
 // wmicList returns the parsed output from tool "wmic".
-func wmicList(args ...string) []map[string]string {
+func wmicList(ctx context.Context, args ...string) []map[string]string {
 	// TODO(maruel): It'd be nicer to use the Win32 APIs but shelling out will be
 	// good enough for now. Shelling out permits to not have to do COM/WMI,
 	// albeit https://github.com/go-ole/go-ole looks good and doesn't use cgo.
@@ -305,7 +311,7 @@ func wmicList(args ...string) []map[string]string {
 	//
 	// The 'new' way is
 	// https://msdn.microsoft.com/en-us/library/windows/desktop/hh830612.aspx
-	b, err := capture("", "wmic", args...)
+	b, err := capture(ctx, "wmic", args...)
 	if err != nil || len(b) == 0 {
 		return nil
 	}

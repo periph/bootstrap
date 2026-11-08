@@ -9,9 +9,10 @@
 // It includes gathering environmental information, like the current country
 // and location on the host to enable configuring the board with the same
 // settings.
-package img // import "periph.io/x/bootstrap/img"
+package img
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,7 +38,7 @@ import (
 //
 // We didn't find a way on Windows to retrieve the local "time zone location"
 // in expected format. In the meantime, "Etc/UTC" is returned on Windows.
-func GetTimeLocation() string {
+func GetTimeLocation(ctx context.Context) string {
 	// OSX and Ubuntu
 	if d, _ := os.Readlink("/etc/localtime"); len(d) != 0 {
 		const p = "/usr/share/zoneinfo/"
@@ -46,7 +47,7 @@ func GetTimeLocation() string {
 		}
 	}
 	// systemd
-	if d, _ := exec.Command("timedatectl").Output(); len(d) != 0 {
+	if d, _ := exec.CommandContext(ctx, "timedatectl").Output(); len(d) != 0 {
 		re := regexp.MustCompile(`(?m)Time zone\: ([^\s]+)`)
 		if match := re.FindSubmatch(d); len(match) != 0 {
 			return string(match[1])
@@ -58,9 +59,9 @@ func GetTimeLocation() string {
 // GetCountry returns the automatically detected country.
 //
 // WARNING: This causes an outgoing HTTP request.
-func GetCountry() string {
+func GetCountry(ctx context.Context) string {
 	// TODO(maruel): Ask the OS first if possible.
-	b, err := fetchURL("https://ipinfo.io/country")
+	b, err := fetchURL(ctx, "https://ipinfo.io/country")
 	if err != nil {
 		return ""
 	}
@@ -70,13 +71,13 @@ func GetCountry() string {
 // GetSetupSH returns the content of setup.sh.
 //
 // Returns nil in case of catastrophic error.
-func GetSetupSH() []byte {
+func GetSetupSH(ctx context.Context) []byte {
 	var p []string
 	if v, err := os.Getwd(); err == nil {
 		p = append(p, v)
 	}
 	if gp := os.Getenv("GOPATH"); len(gp) != 0 {
-		for _, v := range strings.Split(gp, string(os.PathListSeparator)) {
+		for v := range strings.SplitSeq(gp, string(os.PathListSeparator)) {
 			p = append(p, filepath.Join(v, "go", "src", "periph.io", "x", "bootstrap"))
 		}
 	} else {
@@ -89,7 +90,7 @@ func GetSetupSH() []byte {
 			return b
 		}
 	}
-	b, _ := fetchURL("https://raw.githubusercontent.com/periph/bootstrap/master/setup.sh")
+	b, _ := fetchURL(ctx, "https://raw.githubusercontent.com/periph/bootstrap/master/setup.sh")
 	return b
 }
 
@@ -109,14 +110,14 @@ func FindPublicKey() string {
 // ListSDCards returns the SD cards found.
 //
 // Returns nil in case of error.
-func ListSDCards() []string {
+func ListSDCards(ctx context.Context) []string {
 	switch runtime.GOOS {
 	case "linux":
-		return listSDCardsLinux()
+		return listSDCardsLinux(ctx)
 	case "darwin":
-		return listSDCardsOSX()
+		return listSDCardsOSX(ctx)
 	case "windows":
-		return listSDCardsWindows()
+		return listSDCardsWindows(ctx)
 	default:
 		return nil
 	}
@@ -125,16 +126,21 @@ func ListSDCards() []string {
 // Flash flashes imgPath to disk.
 //
 // Before flashing, it unmounts any partition mounted on disk.
-func Flash(imgPath, disk string) error {
-	if err := Umount(disk); err != nil {
-		return nil
+func Flash(ctx context.Context, imgPath, disk string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := Umount(ctx, disk); err != nil {
+		return fmt.Errorf("unmount %q before flashing: %w", disk, err)
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		if err := ddFlash(imgPath, toRawDiskOSX(disk)); err != nil {
+		if err := ddFlash(ctx, imgPath, toRawDiskOSX(disk)); err != nil {
 			return err
 		}
-		time.Sleep(time.Second)
+		if err := wait(ctx, time.Second); err != nil {
+			return err
+		}
 		// Assumes this image has at least one partition.
 		p := disk + "s1"
 		for {
@@ -142,16 +148,20 @@ func Flash(imgPath, disk string) error {
 				break
 			}
 			fmt.Printf(" (still waiting for partition %s to show up)\n", p)
-			time.Sleep(time.Second)
+			if err := wait(ctx, time.Second); err != nil {
+				return err
+			}
 		}
 		return nil
 	case "linux":
-		if err := ddFlash(imgPath, disk); err != nil {
+		if err := ddFlash(ctx, imgPath, disk); err != nil {
 			return err
 		}
 		// Wait a bit to try to workaround "Error looking up object for device" when
 		// immediately using "/usr/bin/udisksctl mount" after this script.
-		time.Sleep(time.Second)
+		if err := wait(ctx, time.Second); err != nil {
+			return err
+		}
 		// Needs suffix 'p' for /dev/mmcblkN but not for /dev/sdX
 		p := disk
 		if strings.Contains(p, "mmcblk") {
@@ -164,18 +174,23 @@ func Flash(imgPath, disk string) error {
 				break
 			}
 			fmt.Printf(" (still waiting for partition %s to show up)\n", p)
-			time.Sleep(time.Second)
+			if err := wait(ctx, time.Second); err != nil {
+				return err
+			}
 		}
 		return nil
 	case "windows":
-		return flashWindows(imgPath, disk)
+		return flashWindows(ctx, imgPath, disk)
 	default:
 		return errors.New("Flash() is not implemented on this OS")
 	}
 }
 
 // Mount mounts a partition number n on disk p and returns the mount path.
-func Mount(disk string, n int) (string, error) {
+func Mount(ctx context.Context, disk string, n int) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		// diskutil doesn't report which volume was mounted, so look at the ones
@@ -186,7 +201,7 @@ func Mount(disk string, n int) (string, error) {
 		}
 		mnt := fmt.Sprintf("%ss%d", disk, n)
 		log.Printf("- Mounting %s", mnt)
-		if _, err = capture("", "diskutil", "mountDisk", mnt); err != nil {
+		if _, err = capture(ctx, "diskutil", "mountDisk", mnt); err != nil {
 			return "", err
 		}
 		after, err := getMountedVolumesOSX()
@@ -216,7 +231,10 @@ func Mount(disk string, n int) (string, error) {
 		if _, err := os.Stat(exe); err != nil {
 			return "", errors.New("please install package udisks2 to get /usr/bin/udisksctl")
 		}
-		txt, _ := capture("", exe, "mount", "-b", mnt)
+		txt, err := capture(ctx, exe, "mount", "-b", mnt)
+		if err != nil {
+			return "", fmt.Errorf("mount %q: %w: %s", mnt, err, txt)
+		}
 		if dst := udisksctlMount(txt); dst != "" {
 			log.Printf("  Mounted as %s", dst)
 			return dst, nil
@@ -230,12 +248,15 @@ func Mount(disk string, n int) (string, error) {
 }
 
 // Umount unmounts all the partitions on disk 'disk'.
-func Umount(disk string) error {
+func Umount(ctx context.Context, disk string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		log.Printf("- Unmounting %s", disk)
-		_, _ = capture("", "diskutil", "unmountDisk", disk)
-		return nil
+		_, _ = capture(ctx, "diskutil", "unmountDisk", disk)
+		return ctx.Err()
 	case "linux":
 		matches, err := filepath.Glob(disk + "*")
 		if err != nil {
@@ -246,25 +267,40 @@ func Umount(disk string) error {
 			if m != disk {
 				// TODO(maruel): This assumes Ubuntu.
 				log.Printf("- Unmounting %s", m)
-				if _, err1 := capture("", "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
+				if _, err1 := capture(ctx, "/usr/bin/udisksctl", "unmount", "-f", "-b", m); err == nil {
 					err = err1
 				}
 			}
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		return nil
 	case "windows":
 		return umountWindows(disk)
 	default:
-		return errors.New("Umount() is not implemented on this OS")
+		return errors.New("Umount(ctx) is not implemented on this OS")
 	}
 }
 
 //
 
+//nolint:unparam // Windows uses a shorter polling interval.
+func wait(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // run runs a command.
-func run(name string, arg ...string) error {
-	log.Printf("run(%s %s)", name, strings.Join(arg, " "))
-	cmd := exec.Command(name, arg...)
+func run(ctx context.Context, name string, arg ...string) error {
+	log.Printf("run(ctx, %s %s)", name, strings.Join(arg, " "))
+	cmd := exec.CommandContext(ctx, name, arg...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -272,10 +308,9 @@ func run(name string, arg ...string) error {
 }
 
 // capture runs a command and return the stdout and stderr merged.
-func capture(in, name string, arg ...string) (string, error) {
-	//log.Printf("capture(%s %s)", name, strings.Join(arg, " "))
-	cmd := exec.Command(name, arg...)
-	cmd.Stdin = strings.NewReader(in)
+func capture(ctx context.Context, name string, arg ...string) (string, error) {
+	// log.Printf("capture(ctx, %s %s)", name, strings.Join(arg, " "))
+	cmd := exec.CommandContext(ctx, name, arg...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -287,7 +322,7 @@ func getHome() string {
 	return os.Getenv("HOME")
 }
 
-func ddFlash(imgPath, dst string) error {
+func ddFlash(ctx context.Context, imgPath, dst string) error {
 	fmt.Printf("- Flashing (takes 2 minutes)\n")
 	// OSX uses 'M' but Ubuntu uses 'm' but using numbers works everywhere.
 	args := []string{"dd", fmt.Sprintf("bs=%d", 4*1024*1024), "if=" + imgPath, "of=" + dst, "oflag=direct"}
@@ -295,20 +330,20 @@ func ddFlash(imgPath, dst string) error {
 		// Not supported on macOS.
 		args = append(args, "status=progress")
 	}
-	if err := run("sudo", args...); err != nil {
+	if err := run(ctx, "sudo", args...); err != nil {
 		return err
 	}
 	if runtime.GOOS != "darwin" {
 		// Tells the OS to wake up with the fact that the partitions changed. It's
 		// fine even if the cache is not written to the disk yet, as the cached
 		// data is in the OS cache. :)
-		if err := run("sudo", "partprobe"); err != nil {
+		if err := run(ctx, "sudo", "partprobe"); err != nil {
 			return err
 		}
 	}
 	// This step may take a while for writeback cache.
 	fmt.Printf("- Flushing I/O cache\n")
-	if err := run("sudo", "sync"); err != nil {
+	if err := run(ctx, "sudo", "sync"); err != nil {
 		return err
 	}
 	return nil
@@ -317,9 +352,9 @@ func ddFlash(imgPath, dst string) error {
 // Linux
 
 var (
-	// Message printed by /usr/bin/udisksctl when a disk is mounted:
+	// Message printed by /usr/bin/udisksctl when a disk is mounted:.
 	reMountLinux1 = regexp.MustCompile(`^Mounted (?:[^ ]+) at ([^.\n]+)\.?\n$`)
-	// Message printed by /usr/bin/udisksctl when a disk was already mounted:
+	// Message printed by /usr/bin/udisksctl when a disk was already mounted:.
 	reMountLinux2 = regexp.MustCompile(`is already mounted at ` + "`" + `([^\']+)\'$`)
 )
 
@@ -376,17 +411,17 @@ func (i *intOrString) UnmarshalJSON(d []byte) error {
 // The output changed somewhere between 2.31 and 2.34 so boolOrString and
 // intOrString are used to hides the differences in the schema.
 type blockDevice struct {
-	Name string
+	Name string `json:"name"`
 	// MajMin is the major and minor "device number".
 	MajMin string `json:"maj:min"`
 	// RM means removable media.
-	RM   boolOrString
-	Size intOrString
+	RM   boolOrString `json:"rm"`
+	Size intOrString  `json:"size"`
 	// RO means read-only.
-	RO         boolOrString
-	Type       string
-	MountPoint string
-	Children   []blockDevice
+	RO         boolOrString  `json:"ro"`
+	Type       string        `json:"type"`
+	MountPoint string        `json:"mountpoint"`
+	Children   []blockDevice `json:"children"`
 }
 
 // isSDCard returns true if the block device looks like a removable drive.
@@ -430,11 +465,11 @@ func (b *blockDevice) isSystem() bool {
 
 // lsblkOutput is the output by "lsblk --json --bytes".
 type lsblkOutput struct {
-	BlockDevices []blockDevice
+	BlockDevices []blockDevice `json:"blockdevices"`
 }
 
-func listSDCardsLinux() []string {
-	b, err := capture("", "lsblk", "--json", "--bytes")
+func listSDCardsLinux(ctx context.Context) []string {
+	b, err := capture(ctx, "lsblk", "--json", "--bytes")
 	if err != nil {
 		return nil
 	}
@@ -464,7 +499,7 @@ type diskutilList struct {
 	AllDisksAndPartitions []struct {
 		Content          string
 		DeviceIdentifier string
-		Partitions       []map[string]interface{}
+		Partitions       []map[string]any
 		MountPoint       string
 		Size             int64
 		VolumeName       string
@@ -516,8 +551,8 @@ type diskutilInfo struct {
 	WritableVolume                              bool
 }
 
-func listSDCardsOSX() []string {
-	b, err := capture("", "diskutil", "list", "-plist")
+func listSDCardsOSX(ctx context.Context) []string {
+	b, err := capture(ctx, "diskutil", "list", "-plist")
 	if err != nil {
 		return nil
 	}
@@ -528,7 +563,7 @@ func listSDCardsOSX() []string {
 	}
 	var out []string
 	for _, d := range disks.WholeDisks {
-		b, err = capture("", "diskutil", "info", "-plist", d)
+		b, err = capture(ctx, "diskutil", "info", "-plist", d)
 		if err != nil {
 			continue
 		}
@@ -556,13 +591,13 @@ func toRawDiskOSX(p string) string {
 	return p
 }
 
-func getMountedVolumesOSX() ([]string, error) {
+func getMountedVolumesOSX() (_ []string, retErr error) {
 	f, err := os.Open("/Volumes")
 	if err != nil {
 		return nil, err
 	}
 	/* #nosec G307 */
-	defer f.Close()
+	defer func() { retErr = errors.Join(retErr, f.Close()) }()
 	all, err := f.Readdir(-1)
 	if err != nil {
 		return nil, err

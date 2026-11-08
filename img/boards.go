@@ -7,6 +7,7 @@
 package img
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,7 +47,7 @@ var manufacturers = []Manufacturer{HardKernel, NextThingCo, Raspberry}
 func (m *Manufacturer) Set(s string) error {
 	for _, e := range manufacturers {
 		if s == string(e) {
-			*m = Manufacturer(e)
+			*m = e
 			return nil
 		}
 	}
@@ -54,12 +56,12 @@ func (m *Manufacturer) Set(s string) error {
 
 // ManufacturerHelp generates the help for Manufacturer.
 func ManufacturerHelp() string {
-	var names []string
+	names := make([]string, 0, len(manufacturers))
 	for _, e := range manufacturers {
 		names = append(names, string(e))
 	}
 	sort.Strings(names)
-	return fmt.Sprintf("Board manufacturer: %s", strings.Join(names, ", "))
+	return "Board manufacturer: " + strings.Join(names, ", ")
 }
 
 // boards return the boards that need a separate image.
@@ -125,7 +127,7 @@ func (b *Board) String() string {
 func (b *Board) Set(s string) error {
 	for _, e := range boards {
 		if s == string(e) {
-			*b = Board(e)
+			*b = e
 			return nil
 		}
 	}
@@ -134,12 +136,12 @@ func (b *Board) Set(s string) error {
 
 // BoardHelp generates the help for Board.
 func BoardHelp() string {
-	var names []string
+	names := make([]string, 0, len(boards))
 	for _, e := range boards {
 		names = append(names, string(e))
 	}
 	sort.Strings(names)
-	return fmt.Sprintf("Boards: %s", strings.Join(names, ", "))
+	return "Boards: " + strings.Join(names, ", ")
 }
 
 // Distro is an OS distribution.
@@ -168,7 +170,7 @@ func (d *Distro) String() string {
 func (d *Distro) Set(s string) error {
 	for _, e := range distros {
 		if s == string(e) {
-			*d = Distro(e)
+			*d = e
 			return nil
 		}
 	}
@@ -181,7 +183,7 @@ func DistroHelp() string {
 	for i, d := range distros {
 		names[i] = string(d)
 	}
-	return fmt.Sprintf("Distros: %s", strings.Join(names, ", "))
+	return "Distros: " + strings.Join(names, ", ")
 }
 
 //
@@ -222,13 +224,7 @@ func (i *Image) Check() error {
 		if i.Board == "" {
 			i.Board = b[0]
 		} else {
-			found := false
-			for _, j := range b {
-				if i.Board == j {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(b, i.Board)
 			if !found {
 				return errors.New("unknown board")
 			}
@@ -258,6 +254,8 @@ func (i *Image) DefaultUser() string {
 			return "pi"
 		case Ubuntu:
 			return "ubuntu"
+		case Debian:
+			return ""
 		}
 	}
 	return ""
@@ -280,20 +278,25 @@ func (i *Image) DefaultHostname() string {
 // Fetch fetches the distro image remotely.
 //
 // Returns the absolute path to the file downloaded.
-func (i *Image) Fetch() (string, error) {
+func (i *Image) Fetch(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	switch i.Manufacturer {
 	case HardKernel:
-		return fetchHardKernel()
+		return fetchHardKernel(ctx)
 	case NextThingCo:
 		return "", errors.New("implement me")
 	case Raspberry:
 		switch i.Distro {
 		case RaspiOS:
-			return fetchRPiRaspiOSLite(false)
+			return fetchRPiRaspiOSLite(ctx, false)
 		case RaspiOS64:
-			return fetchRPiRaspiOSLite(true)
+			return fetchRPiRaspiOSLite(ctx, true)
 		case Ubuntu:
-			return fetchRPiUbuntu()
+			return fetchRPiUbuntu(ctx)
+		case Debian:
+			return "", fmt.Errorf("don't know how to fetch %s", i)
 		}
 	}
 	// - https://www.armbian.com/download/
@@ -303,7 +306,7 @@ func (i *Image) Fetch() (string, error) {
 	return "", fmt.Errorf("don't know how to fetch %s", i)
 }
 
-func fetchHardKernel() (string, error) {
+func fetchHardKernel(ctx context.Context) (string, error) {
 	// http://odroid.com/dokuwiki/doku.php?id=en:odroid-c1
 	// http://odroid.in/ubuntu_16.04lts/
 	mirror := "https://odroid.in/ubuntu_16.04lts/"
@@ -320,14 +323,17 @@ func fetchHardKernel() (string, error) {
 		return imgpath, nil
 	}
 	imgurl := mirror + imgpath + ".xz"
-	if err := fetchXZ(imgurl, imgpath); err != nil {
+	if err := fetchXZ(ctx, imgurl, imgpath); err != nil {
 		return "", err
 	}
 	return imgpath, nil
 }
 
-func fetchRPiRaspiOSLite(is64bits bool) (string, error) {
-	imgurl, imgname := raspiosGetLatestImageURL(is64bits)
+func fetchRPiRaspiOSLite(ctx context.Context, is64bits bool) (string, error) {
+	imgurl, imgname := raspiosGetLatestImageURL(ctx, is64bits)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	imgpath, err := filepath.Abs(imgname)
 	if err != nil {
 		return "", err
@@ -341,16 +347,19 @@ func fetchRPiRaspiOSLite(is64bits bool) (string, error) {
 		_ = f.Close()
 		return imgpath, nil
 	}
-	if err := fetchXZ(imgurl, imgname); err != nil {
+	if err := fetchXZ(ctx, imgurl, imgname); err != nil {
 		return "", err
 	}
 	return imgname, nil
 }
 
-func fetchRPiUbuntu() (string, error) {
+func fetchRPiUbuntu(ctx context.Context) (string, error) {
 	// https://ubuntu.com/download/raspberry-pi
 	// For now, if the user requests ubuntu, assume they want the 64 bits version.
-	ver, subver := ubuntuGetLatestLTS()
+	ver, subver := ubuntuGetLatestLTS(ctx)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	imgname := "ubuntu-" + ver + "-preinstalled-server-arm64+raspi.img"
 	if subver != "" {
 		imgname = "ubuntu-" + ver + "." + subver + "-preinstalled-server-arm64+raspi.img"
@@ -365,20 +374,20 @@ func fetchRPiUbuntu() (string, error) {
 		return imgpath, nil
 	}
 	imgurl := "https://cdimage.ubuntu.com/releases/" + ver + "/release/" + imgname + ".xz"
-	if err := fetchXZ(imgurl, imgpath); err != nil {
+	if err := fetchXZ(ctx, imgurl, imgpath); err != nil {
 		return "", err
 	}
 	return imgpath, nil
 }
 
 // ubuntuGetLatestLTS returns the latest Ubuntu LTS version and optional point release.
-func ubuntuGetLatestLTS() (string, string) {
+func ubuntuGetLatestLTS(ctx context.Context) (string, string) {
 	// Default to a known-good LTS if fetching fails.
 	ver := "24.04"
 	subver := ""
 	reVer := regexp.MustCompile(`(\d+\.\d+)/`)
 
-	b, err := fetchURL("https://cdimage.ubuntu.com/releases/")
+	b, err := fetchURL(ctx, "https://cdimage.ubuntu.com/releases/")
 	if err != nil {
 		log.Printf("failed to fetch ubuntu releases: %v", err)
 		return ver, subver
@@ -401,7 +410,7 @@ func ubuntuGetLatestLTS() (string, string) {
 
 	// Find the latest point release for this LTS.
 	subre := regexp.MustCompile(`ubuntu-` + regexp.QuoteMeta(ver) + `(\.(\d+))?-preinstalled-server-arm64\+raspi\.img\.xz`)
-	b, err = fetchURL("https://cdimage.ubuntu.com/releases/" + ver + "/release/")
+	b, err = fetchURL(ctx, "https://cdimage.ubuntu.com/releases/"+ver+"/release/")
 	if err != nil {
 		log.Printf("failed to fetch ubuntu %s release: %v", ver, err)
 		return ver, subver
@@ -430,7 +439,7 @@ func ubuntuGetLatestLTS() (string, string) {
 // raspiosGetLatestImageURL reads the image listing to find the latest one.
 //
 // Getting the torrent would be nicer to the host.
-func raspiosGetLatestImageURL(is64bits bool) (string, string) {
+func raspiosGetLatestImageURL(ctx context.Context, is64bits bool) (string, string) {
 	// The final URL looks like:
 	// https://downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2022-09-26/2022-09-22-raspios-bullseye-armhf-lite.img.xz
 	arch := "armhf"
@@ -453,7 +462,7 @@ func raspiosGetLatestImageURL(is64bits bool) (string, string) {
 	xzFile := "2026-04-21" + "-raspios-" + distro + "-" + arch + "-lite.img.xz"
 	imgFile := "2026-04-21" + "-raspios-" + distro + "-" + arch + "-lite.img"
 
-	r, err := fetchURL(baseImgURL)
+	r, err := fetchURL(ctx, baseImgURL)
 	if err != nil {
 		log.Printf("failed to fetch: %v", err)
 		goto end
@@ -471,7 +480,7 @@ func raspiosGetLatestImageURL(is64bits bool) (string, string) {
 	log.Printf("Found date %s", date)
 
 	// Find the distro name.
-	r, err = fetchURL(baseImgURL + fmt.Sprintf(dirFmt, date))
+	r, err = fetchURL(ctx, baseImgURL+fmt.Sprintf(dirFmt, date))
 	if err != nil {
 		log.Printf("failed to fetch: %v", err)
 		goto end
@@ -498,13 +507,17 @@ end:
 	return url, imgFile
 }
 
-func fetchURL(url string) ([]byte, error) {
-	r, err := http.DefaultClient.Get(url)
+func fetchURL(ctx context.Context, url string) (_ []byte, retErr error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	r, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %q: %w", url, err)
 	}
-	defer r.Body.Close()
-	if r.StatusCode != 200 {
+	defer func() { retErr = errors.Join(retErr, r.Body.Close()) }()
+	if r.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch %q: status %d", url, r.StatusCode)
 	}
 	reply, err := io.ReadAll(r.Body)
@@ -514,26 +527,39 @@ func fetchURL(url string) ([]byte, error) {
 	return reply, nil
 }
 
-func fetchXZ(imgurl, imgpath string) error {
+func fetchXZ(ctx context.Context, imgurl, imgpath string) (retErr error) {
 	fmt.Printf("- Fetching %s\n", imgurl)
-	resp, err := http.DefaultClient.Get(imgurl)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imgurl, nil)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { retErr = errors.Join(retErr, resp.Body.Close()) }()
 	r, err := xz.NewReader(resp.Body)
 	if err != nil {
 		return err
 	}
 	/* #nosec G304 */
-	f, err := os.Create(imgpath)
+	f, err := os.CreateTemp(filepath.Dir(imgpath), ".bootstrap-image-*")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
+	defer func() {
+		if removeErr := os.Remove(tmp); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			retErr = errors.Join(retErr, removeErr)
+		}
+	}()
 	// Decompress as the file is being downloaded.
 	if _, err = io.Copy(f, r); err != nil {
 		_ = f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, imgpath)
 }

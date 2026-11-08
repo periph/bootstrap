@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,16 +15,18 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
-// run is a shorthand for exec.Command().Run().
-func run(name string, arg ...string) error {
-	c := exec.Command(name, arg...)
+// run executes a command with inherited output streams.
+func run(ctx context.Context, name string, arg ...string) error {
+	c := exec.CommandContext(ctx, name, arg...)
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	return c.Run()
@@ -49,7 +52,7 @@ func (t tool) String() string {
 	return toolName[toolIndex[t]:toolIndex[t+1]]
 }
 
-func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) error {
+func (t tool) push(ctx context.Context, verbose bool, src string, pkgs []string, host, rel string) error {
 	dst := fmt.Sprintf("%s:%s", host, rel)
 	var args []string
 	switch t {
@@ -83,7 +86,7 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 	default:
 		return errors.New("please make sure at least one of rsync, scp or pscp is in PATH")
 	}
-	if err := run(t.String(), args...); err != nil {
+	if err := run(ctx, t.String(), args...); err != nil {
 		return err
 	}
 	if runtime.GOOS == "windows" {
@@ -95,13 +98,14 @@ func (t tool) push(verbose bool, src string, pkgs []string, host, rel string) er
 		}
 		switch t {
 		case rsyncProgress, rsyncOld, scp:
-			return run("ssh", args...)
+			return run(ctx, "ssh", args...)
 		case pscp:
-			return run("plink", args...)
+			return run(ctx, "plink", args...)
+		case none:
+			return errors.New("no file transfer tool available")
 		}
 	}
 	return nil
-
 }
 
 // As printed by print_rsync_version() in
@@ -125,8 +129,8 @@ func getRsyncVersion(v []byte) (int, int) {
 	return major, minor
 }
 
-func detectRsync() tool {
-	if v, err := exec.Command("rsync", "--version").CombinedOutput(); err == nil {
+func detectRsync(ctx context.Context) tool {
+	if v, err := exec.CommandContext(ctx, "rsync", "--version").CombinedOutput(); err == nil {
 		if major, minor := getRsyncVersion(v); major != 0 {
 			// --info=progress2 has been introduced in 3.1.0 as noted at
 			// https://download.samba.org/pub/rsync/src/rsync-3.1.0-NEWS
@@ -139,46 +143,47 @@ func detectRsync() tool {
 	return none
 }
 
-func detectPscp() tool {
+func detectPscp(ctx context.Context) tool {
 	if runtime.GOOS == "windows" {
-		if _, err := exec.Command("pscp", "-V").CombinedOutput(); err == nil {
+		if _, err := exec.CommandContext(ctx, "pscp", "-V").CombinedOutput(); err == nil {
 			return pscp
 		}
 	}
 	return none
 }
 
-func detectScp() tool {
-	_, err := exec.Command("scp", "-V").CombinedOutput()
-	if err2, ok := err.(*exec.Error); ok && err2.Err == exec.ErrNotFound {
+func detectScp(ctx context.Context) tool {
+	_, err := exec.CommandContext(ctx, "scp", "-V").CombinedOutput()
+	var execErr *exec.Error
+	if errors.As(err, &execErr) && errors.Is(execErr.Err, exec.ErrNotFound) {
 		return none
 	}
 	return scp
 }
 
 // detect returns which tool to use.
-func detect() tool {
-	if t := detectRsync(); t != none {
+func detect(ctx context.Context) tool {
+	if t := detectRsync(ctx); t != none {
 		return t
 	}
-	if t := detectPscp(); t != none {
+	if t := detectPscp(ctx); t != none {
 		return t
 	}
-	return detectScp()
+	return detectScp(ctx)
 }
 
 // toPkg returns one or multiple packages matching the relpath.
-func toPkg(item string) ([]string, error) {
-	out, err := exec.Command("go", "list", "--", item).CombinedOutput()
+func toPkg(ctx context.Context, item string) ([]string, error) {
+	out, err := exec.CommandContext(ctx, "go", "list", "--", item).CombinedOutput()
 	s := strings.TrimSpace(string(out))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list package %q: %v\n%s", item, err, s)
+		return nil, fmt.Errorf("failed to list package %q: %w\n%s", item, err, s)
 	}
 	return strings.Split(s, "\n"), nil
 }
 
 // pushInner does the actual work: build then push.
-func pushInner(verbose bool, t tool, pkgs []string, tags string, host, rel, d string) error {
+func pushInner(ctx context.Context, verbose bool, t tool, pkgs []string, tags string, host, rel, d string) error {
 	// First build everything.
 	for _, pkg := range pkgs {
 		fmt.Printf("- Building %s\n", pkg)
@@ -187,7 +192,7 @@ func pushInner(verbose bool, t tool, pkgs []string, tags string, host, rel, d st
 			args = append(args, "-tags", tags)
 		}
 		args = append(args, pkg)
-		if err := run("go", args...); err != nil {
+		if err := run(ctx, "go", args...); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to build %s\n", pkg)
 			return err
 		}
@@ -199,15 +204,15 @@ func pushInner(verbose bool, t tool, pkgs []string, tags string, host, rel, d st
 	}
 	// Then push it all as one swoop.
 	fmt.Printf("- Pushing %d executables to %s in %s via %s\n", len(pkgs), rel, host, t)
-	return t.push(verbose, d, pkgs, host, rel)
+	return t.push(ctx, verbose, d, pkgs, host, rel)
 }
 
 // push wraps pushInner with a temporary directory.
-func push(verbose bool, t tool, items []string, tags string, host, rel string) error {
+func push(ctx context.Context, verbose bool, t tool, items []string, tags string, host, rel string) error {
 	// First convert the passed strings into real package names.
 	var pkgs []string
 	for _, item := range items {
-		i, err := toPkg(item)
+		i, err := toPkg(ctx, item)
 		if err != nil {
 			return err
 		}
@@ -218,14 +223,14 @@ func push(verbose bool, t tool, items []string, tags string, host, rel string) e
 	if err != nil {
 		return err
 	}
-	err = pushInner(verbose, t, pkgs, tags, host, rel, d)
+	err = pushInner(ctx, verbose, t, pkgs, tags, host, rel, d)
 	if err1 := os.RemoveAll(d); err == nil {
 		err = err1
 	}
 	return err
 }
 
-func mainImpl() error {
+func mainImpl(ctx context.Context) error {
 	goarch := flag.String("goarch", "arm", "GOARCH value to use")
 	goarm := flag.String("goarm", "6", "GOARM value to use")
 	goos := flag.String("goos", "linux", "GOOS value to use")
@@ -248,23 +253,27 @@ func mainImpl() error {
 	switch *preferredTool {
 	case "rsync":
 		// Do a quick version detect.
-		if t = detectRsync(); t == none {
+		if t = detectRsync(ctx); t == none {
 			return errors.New("failed to detect rsync")
 		}
 	case "pscp":
-		if t = detectPscp(); t == none {
+		if t = detectPscp(ctx); t == none {
 			return errors.New("failed to detect pscp")
 		}
 	case "scp":
-		if t = detectScp(); t == none {
+		if t = detectScp(ctx); t == none {
 			return errors.New("failed to detect scp")
 		}
 	case "":
-		if t = detect(); t == none {
+		if t = detect(ctx); t == none {
 			return errors.New("please make sure at least one of rsync, scp or pscp is in PATH")
 		}
 	default:
 		return fmt.Errorf("unrecognized tool %q", *preferredTool)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Simplify our life and just set it process wide.
@@ -282,11 +291,14 @@ func mainImpl() error {
 			_ = os.Setenv("CGO_ENABLED", "1")
 		}
 	}
-	return push(*verbose, t, pkgs, *tags, *host, *rel)
+	return push(ctx, *verbose, t, pkgs, *tags, *host, *rel)
 }
 
 func main() {
-	if err := mainImpl(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := mainImpl(ctx)
+	stop()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "push: %s\n\nVisit https://github.com/periph/bootstrap#troubleshooting-push for help.\n", err)
 		os.Exit(1)
 	}
