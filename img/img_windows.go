@@ -22,17 +22,17 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// FSCTL_LOCK_VOLUME = CTL_CODE(FILE_DEVICE_FILE_SYSTEM,6,METHOD_BUFFERED,FILE_ANY_ACCESS)
+// FSCTL_LOCK_VOLUME = CTL_CODE(FILE_DEVICE_FILE_SYSTEM,6,METHOD_BUFFERED,FILE_ANY_ACCESS).
 const fsctlLockVolume = 0x90018
 
-// FSCTL_DISMOUNT_VOLUME = CTL_CODE(FILE_DEVICE_FILE_SYSTEM,8,METHOD_BUFFERED,FILE_ANY_ACCESS)
+// FSCTL_DISMOUNT_VOLUME = CTL_CODE(FILE_DEVICE_FILE_SYSTEM,8,METHOD_BUFFERED,FILE_ANY_ACCESS).
 const fsctlDismountVolume = 0x90020
 
-// IOCTL_DISK_UPDATE_PROPERTIES = CTL_CODE(IOCTL_DISK_BASE,0x50,METHOD_BUFFERED,FILE_ANY_ACCESS)
+// IOCTL_DISK_UPDATE_PROPERTIES = CTL_CODE(IOCTL_DISK_BASE,0x50,METHOD_BUFFERED,FILE_ANY_ACCESS).
 const ioctlDiskUpdateProperties = 0x70140
 
 // https://msdn.microsoft.com/en-us/library/windows/desktop/bb968801.aspx
-// IOCTL_STORAGE_GET_DEVICE_NUMBER = CTL_CODE(IOCTL_STORAGE_BASE,0x0420,METHOD_BUFFERED,FILE_ANY_ACCESS)
+// IOCTL_STORAGE_GET_DEVICE_NUMBER = CTL_CODE(IOCTL_STORAGE_BASE,0x0420,METHOD_BUFFERED,FILE_ANY_ACCESS).
 const ioctlStorageGetDeviceNumber = 0x2d1080
 
 // https://msdn.microsoft.com/en-us/library/windows/desktop/bb968801.aspx
@@ -47,8 +47,8 @@ type storageDeviceNumber struct {
 // Requires the process to be running as an admin account with an high level
 // token.
 //
-// 'disk' is expected to be of format "\\\\.\\physicaldriveN"
-func flashWindows(ctx context.Context, imgPath, disk string) error {
+// 'disk' is expected to be of format "\\\\.\\physicaldriveN".
+func flashWindows(ctx context.Context, imgPath, disk string) (retErr error) {
 	// TODO(maruel): It'd be worth opening with FILE_FLAG_SEQUENTIAL_SCAN but Go
 	// stdlib doesn't allow this.
 	/* #nosec G304 */
@@ -56,8 +56,7 @@ func flashWindows(ctx context.Context, imgPath, disk string) error {
 	if err != nil {
 		return err
 	}
-	/* #nosec G307 */
-	defer fi.Close()
+	defer func() { retErr = errors.Join(retErr, fi.Close()) }()
 	i, err := fi.Stat()
 	if err != nil {
 		return err
@@ -116,17 +115,17 @@ func flashWindows(ctx context.Context, imgPath, disk string) error {
 	var b [64 * 1024]byte
 	fmt.Printf("\n")
 	for o := int64(0); ; {
-		if err := ctx.Err(); err != nil {
+		if err = ctx.Err(); err != nil {
 			return err
 		}
-		n := 0
-		if n, err = fi.Read(b[:]); err == io.EOF {
+		var n int
+		if n, err = fi.Read(b[:]); errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %w", imgPath, err)
 		}
-		nw := 0
+		var nw int
 		if nw, err = syscall.Write(fd, b[:n]); err != nil {
 			// TODO(maruel): Find the drive letter(s) and call windows.DeleteVolumeMountPoint().
 			return fmt.Errorf("failed to write %s. It likely means you need to unmount the drive letter: %w", disk, err)
@@ -186,7 +185,7 @@ func mountWindows(disk string, n int) (string, error) {
 	return p[0], nil
 }
 
-func umountWindows(disk string) error {
+func umountWindows(_ string) error {
 	// This needs to be done *during* the flashing operation to keep the volumes
 	// locked.
 	return nil
@@ -231,7 +230,7 @@ func diskNum(disk string) int {
 // getVolumes returns all the volumes found on the system.
 //
 // The returned strings are in the format
-// "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}"
+// "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}".
 func getVolumes() []string {
 	// TODO(maruel): Handle path overflow
 	var v [256]uint16
@@ -315,7 +314,7 @@ func wmicList(ctx context.Context, args ...string) []map[string]string {
 	if err != nil || len(b) == 0 {
 		return nil
 	}
-	s := strings.Replace(string(b), "\r", "", -1)
+	s := strings.ReplaceAll(b, "\r", "")
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	type col struct {
 		start, end int
@@ -329,7 +328,9 @@ func wmicList(ctx context.Context, args ...string) []map[string]string {
 			// Last column.
 			end = len(l)
 		} else {
-			for end += i; end < len(l) && l[end] == ' '; end++ {
+			end += i
+			for end < len(l) && l[end] == ' ' {
+				end++
 			}
 		}
 		name := strings.TrimSpace(l[i:end])

@@ -285,7 +285,7 @@ func Umount(ctx context.Context, disk string) error {
 
 //
 
-//nolint:unparam // Windows uses a shorter polling interval.
+//nolint:unparam,nolintlint // Only Windows uses a shorter polling interval, so unparam is platform-dependent.
 func wait(ctx context.Context, delay time.Duration) error {
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
